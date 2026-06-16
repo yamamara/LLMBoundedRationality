@@ -1,0 +1,25 @@
+{
+  "game_name": "human-first-price",
+  "output_dir": "runs",
+  "auction": {
+    "rounds": 10,
+    "starting_budget": 100,
+    "valuation_min": 1,
+    "valuation_max": 100,
+    "mechanism": "first_price",
+    "institution": "baseline",
+    "seed": 7
+  },
+  "participants": [
+    {
+      "player_id": "P1",
+      "agent_type": "human",
+      "policy": "human_cli"
+    },
+    {
+      "player_id": "P2",
+      "agent_type": "human",
+      "policy": "human_cli"
+    }
+  ]
+}
