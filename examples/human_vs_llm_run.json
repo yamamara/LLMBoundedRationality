@@ -1,0 +1,34 @@
+{
+  "game_name": "human-vs-llm-first-price",
+  "output_dir": "runs",
+  "auction": {
+    "rounds": 10,
+    "starting_budget": 100,
+    "valuation_min": 1,
+    "valuation_max": 100,
+    "mechanism": "first_price",
+    "institution": "baseline",
+    "seed": 7
+  },
+  "participants": [
+    {
+      "player_id": "H1",
+      "agent_type": "human",
+      "policy": "human_cli"
+    },
+    {
+      "player_id": "L1",
+      "agent_type": "AI",
+      "policy": "openai_compatible",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "model": "gemini-2.5-flash",
+      "api_key_env": "OPENAI_API_KEY",
+      "temperature": 0,
+      "max_tokens": 800,
+      "timeout_seconds": 60,
+      "memory_rounds": 3,
+      "max_retries": 2,
+      "reasoning_effort": "none"
+    }
+  ]
+}
