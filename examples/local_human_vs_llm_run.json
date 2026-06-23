@@ -1,0 +1,37 @@
+{
+  "game_name": "human-vs-local-llm",
+  "output_dir": "runs",
+  "auction": {
+    "rounds": 10,
+    "starting_budget": 100,
+    "valuation_min": 1,
+    "valuation_max": 100,
+    "mechanism": "first_price",
+    "institution": "baseline",
+    "seed": 7
+  },
+  "participants": [
+    {
+      "player_id": "H1",
+      "agent_type": "human",
+      "policy": "human_cli"
+    },
+    {
+      "player_id": "Local_AI",
+      "agent_type": "AI",
+      "policy": "openai_compatible",
+      "base_url": "http://localhost:11434/v1",
+      "api_key_env": null, 
+      "model": "llama3.1", 
+      "temperature": 0.2,
+      "max_tokens": 800,
+      "timeout_seconds": 120,
+      "memory_rounds": 3,
+      "max_retries": 2,
+      "reasoning_effort": "none",
+      "response_format": {
+        "type": "json_object"
+      }
+    }
+  ]
+}
