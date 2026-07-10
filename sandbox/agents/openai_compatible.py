@@ -16,14 +16,14 @@ from sandbox.models import Action, AgentDecision, Observation, Agent
 class OpenAICompatibleConfig:
     base_url: str
     model: str
-    api_key_env: str | None
-    temperature: float
-    max_tokens: int
-    timeout_seconds: float
-    memory_rounds: int | None
-    max_retries: int
-    reasoning_effort: str | None
-    response_format: dict[str, Any] | None
+    api_key_env: str | None = None
+    temperature: float = 0.0
+    max_tokens: int = 800
+    timeout_seconds: float = 60.0
+    memory_rounds: int | None = None
+    max_retries: int = 2
+    reasoning_effort: str | None = "none"
+    response_format: dict[str, Any] | None = None
 
 
 def auction_bid_response_format() -> dict[str, Any]:
@@ -55,10 +55,13 @@ def auction_bid_response_format() -> dict[str, Any]:
 
 def parse_action(content: str) -> Action:
     action_json = json.loads(content)
+    value = action_json["value"]
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = {"bid": value}
 
     return Action(
         action_type=action_json["action_type"],
-        value=action_json["value"],
+        value=value,
         reasoning=action_json["reasoning"],
     )
 
@@ -91,12 +94,13 @@ class OpenAICompatibleAgent(Agent):
         # Monotonic better for elapsed time than time.time
         start_time = time.monotonic()
 
+        last_error = None
         for attempt_index in range(self.config.max_retries):
             content, response_metadata = self.generate_response(messages)
 
             attempts.append(
                 {
-                    "request_messages": messages,
+                    "request_messages": deepcopy(messages),
                     "response": content,
                     **response_metadata,
                 }
@@ -108,6 +112,7 @@ class OpenAICompatibleAgent(Agent):
             except Exception as exc:
                 action = None
                 error = str(exc)
+            last_error = error
 
             if action and not error:
                 return AgentDecision(
@@ -129,18 +134,8 @@ class OpenAICompatibleAgent(Agent):
                 }
             )
 
-        return AgentDecision(
-            Action(
-                "submit_bid",
-                {"bid": 0},
-                f"Fallback after {len(attempts)} invalid AI responses.",
-            ),
-            {
-                "attempts": attempts,
-                "latency_seconds": time.monotonic() - start_time,
-                "retry_count": max(0, len(attempts) - 1),
-                "fallback": "zero_bid",
-            },
+        raise ValueError(
+            f"AI failed to return a valid action after {len(attempts)} attempts: {last_error}"
         )
 
     def build_prompts(self, observation: Observation) -> list[dict[str, str]]:
@@ -156,7 +151,8 @@ class OpenAICompatibleAgent(Agent):
             **observation_dict,
             "instruction": (
                 "Choose your bid. Return JSON only with action_type='submit_bid', "
-                "value containing an integer bid in the legal range, and a brief reasoning string. "
+                "value as an object like {'bid': 5}, where bid is an integer in the legal range, "
+                "and a brief reasoning string. "
                 "Do not reveal chain-of-thought."
             ),
         }
@@ -182,7 +178,7 @@ class OpenAICompatibleAgent(Agent):
             "max_tokens": self.config.max_tokens,
             "response_format": self.config.response_format or auction_bid_response_format(),
         }
-        if self.config.reasoning_effort:
+        if self.config.reasoning_effort and self.config.reasoning_effort != "none":
             request_body["reasoning_effort"] = self.config.reasoning_effort
         response = requests.post(
             f"{self.config.base_url.rstrip('/')}/chat/completions",
@@ -190,7 +186,12 @@ class OpenAICompatibleAgent(Agent):
             json=request_body,
             timeout=self.config.timeout_seconds,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            raise RuntimeError(
+                f"OpenAI-compatible API request failed: {response.status_code} {response.text}"
+            ) from exc
         body = response.json()
         return body["choices"][0]["message"]["content"], {
             "response_model": body.get("model", ""),

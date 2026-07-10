@@ -14,8 +14,8 @@ from sandbox.serialization import OutputWriter
 class AuctionConfig:
     rounds: int
     starting_budget: int
-    valuation_min: int
-    valuation_max: int
+    true_value_min: int
+    true_value_max: int
     mechanism: str
     seed: int
     institution: str
@@ -53,9 +53,9 @@ class AuctionEnvironment(Environment):
         self.history: list[dict[str, Any]] = []
         self.current_bids: dict[str, int] = {}
 
-        self.valuations = {
+        self.true_values = {
             player_id: [
-                self.rng.randint(self.config.valuation_min, self.config.valuation_max)
+                self.rng.randint(self.config.true_value_min, self.config.true_value_max)
                 for _ in range(self.config.rounds)
             ]
             for player_id in self.player_ids
@@ -84,7 +84,7 @@ class AuctionEnvironment(Environment):
                 "completed_rounds": self.history,
             },
             private_state={
-                "valuation": self.valuations[player_id][self.round],
+                "true_value": self.true_values[player_id][self.round],
                 "remaining_budget": self.budgets[player_id],
             },
             legal_actions=self.legal_actions(player_id),
@@ -164,19 +164,19 @@ class AuctionEnvironment(Environment):
         if winner_id:
             self.budgets[winner_id] -= price
 
-        valuations = {
-            player_id: self.valuations[player_id][self.round] for player_id in self.player_ids
+        true_values = {
+            player_id: self.true_values[player_id][self.round] for player_id in self.player_ids
         }
 
         payoffs = {
-            player_id: valuations[player_id] - price if player_id == winner_id else 0
+            player_id: true_values[player_id] - price if player_id == winner_id else 0
             for player_id in self.player_ids
         }
 
         for player_id, payoff in payoffs.items():
             self.total_payoffs[player_id] += payoff
 
-        efficiency = valuations[winner_id] / max(valuations.values()) if winner_id else 0.0
+        efficiency = true_values[winner_id] / max(true_values.values()) if winner_id else 0.0
 
         round_summary = {
             "round": self.round,
@@ -201,12 +201,12 @@ class AuctionEnvironment(Environment):
                     "player_id": player_id,
                     "agent_type": self.participants[player_id].agent_type,
                     "agent": self.participants[player_id].agent.name,
-                    "valuation": valuations[player_id],
+                    "true_value": true_values[player_id],
                     "bid": bids[player_id],
                     "winner": player_id == winner_id,
                     "price": price if player_id == winner_id else 0,
                     "payoff": payoffs[player_id],
-                    "regret": self.regret(player_id, valuations[player_id], winner_id, price),
+                    "regret": self.regret(player_id, true_values[player_id], winner_id, price),
                     "remaining_budget": self.budgets[player_id],
                     "valid_action": decision_context[player_id]["valid"],
                     "invalid_reason": decision_context[player_id]["invalid_reason"] or "",
@@ -215,7 +215,7 @@ class AuctionEnvironment(Environment):
                 }
             )
 
-        self.log({"event_type": "settlement", **round_summary, "bids": bids, "valuations": valuations})
+        self.log({"event_type": "settlement", **round_summary, "bids": bids, "true_values": true_values})
 
 
     def price(self, winner_id: str | None, bids: dict[str, int]) -> int:
@@ -229,11 +229,11 @@ class AuctionEnvironment(Environment):
 
 
     # Regret measures exactly how much better the player could've done with a better bid (how much they regret the bid they did)
-    # If the player won their payoff is value - price, if they lost then 0 payoff
-    # But the BEST payoff they could've gotten is the value - winning price, where winning price is other bid + 1
+    # If the player won their payoff is true value - price, if they lost then 0 payoff
+    # But the BEST payoff they could've gotten is the true value - winning price, where winning price is other bid + 1
     # Regret is then calculated as best_payoff - actual_payoff
-    def regret(self, player_id: str, valuation: int, winner_id: str | None, price: int) -> int:
-        realized_payoff = valuation - price if player_id == winner_id else 0
+    def regret(self, player_id: str, true_value: int, winner_id: str | None, price: int) -> int:
+        realized_payoff = true_value - price if player_id == winner_id else 0
         other_highest = max((bid for other, bid in self.current_bids.items() if other != player_id), default=0)
 
         # TODO: Add more if we expand mechanisms
@@ -243,7 +243,7 @@ class AuctionEnvironment(Environment):
             winning_price = other_highest
 
         can_win = other_highest + 1 <= self.budgets[player_id] + (price if player_id == winner_id else 0)
-        best_payoff = max(0, valuation - winning_price) if can_win else 0
+        best_payoff = max(0, true_value - winning_price) if can_win else 0
         return max(0, best_payoff - realized_payoff)
 
 

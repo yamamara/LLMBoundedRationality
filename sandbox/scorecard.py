@@ -15,7 +15,6 @@ from typing import Any, Iterable
 class OutcomeSpec:
     name: str
     unit: str
-    higher_is_better: bool
 
 
 @dataclass(frozen=True)
@@ -23,7 +22,6 @@ class Outcome:
     run_id: str
     measure: str
     unit: str
-    higher_is_better: bool
     institution: str
     population_composition: str
     agent_type: str | None
@@ -43,26 +41,30 @@ class Estimate:
     standard_error: float | None = None
     confidence_interval_95: tuple[float, float] | None = None
     reference_standard_deviation: float | None = None
+    percent_reference_value: float | None = None
+    percent_reference_available: bool = False
+    relative_delta: float | None = None
+    relative_percent: float | None = None
     comparison: str | None = None
 
 
 AUCTION_OUTCOMES = [
-    OutcomeSpec("payoff", "utility_points", True),
-    OutcomeSpec("regret", "utility_points", False),
-    OutcomeSpec("invalid_action", "share", False),
-    OutcomeSpec("retry_count", "count", False),
-    OutcomeSpec("latency_seconds", "seconds", False),
+    OutcomeSpec("payoff", "utility_points"),
+    OutcomeSpec("regret", "utility_points"),
+    OutcomeSpec("invalid_action", "share"),
+    OutcomeSpec("retry_count", "count"),
+    OutcomeSpec("latency_seconds", "seconds"),
 ]
 
 AUCTION_SYSTEM_OUTCOMES = [
-    OutcomeSpec("allocative_efficiency", "share", True),
+    OutcomeSpec("allocative_efficiency", "share"),
 ]
 
 
 def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
     outcomes = []
     for run_dir in run_dirs:
-        with (run_dir / "decisions.csv").open(newline="", encoding="utf-8") as handle:
+        with (run_dir / "participant_data.csv").open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 for spec in AUCTION_OUTCOMES:
                     value = 0.0 if spec.name == "invalid_action" and row["valid_action"] == "True" else None
@@ -75,14 +77,13 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
                             run_id=row["run_id"],
                             measure=spec.name,
                             unit=spec.unit,
-                            higher_is_better=spec.higher_is_better,
                             institution=row["institution"],
                             population_composition=row["population_composition"],
                             agent_type=row["agent_type"],
                             value=value,
                         )
                     )
-        with (run_dir / "rounds.csv").open(newline="", encoding="utf-8") as handle:
+        with (run_dir / "system_data.csv").open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 for spec in AUCTION_SYSTEM_OUTCOMES:
                     outcomes.append(
@@ -90,7 +91,6 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
                             run_id=row["run_id"],
                             measure=spec.name,
                             unit=spec.unit,
-                            higher_is_better=spec.higher_is_better,
                             institution=row["institution"],
                             population_composition=row["population_composition"],
                             agent_type=None,
@@ -100,22 +100,18 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
     return outcomes
 
 
-def build_scorecard(outcomes: list[Outcome], include_provisional_scalar: bool = False) -> dict[str, Any]:
+def build_scorecard(outcomes: list[Outcome]) -> dict[str, Any]:
     grouped: dict[str, list[Outcome]] = defaultdict(list)
     for outcome in outcomes:
         grouped[outcome.measure].append(outcome)
-    scorecard = {"metric": "Institutional Redesign Pressure scorecard", "measures": {}}
+    scorecard = {"metric": "AI Replacement Impact scorecard", "measures": {}}
     for measure, rows in sorted(grouped.items()):
-        components = _measure_components(rows)
+        primary, diagnostics = _measure_scorecard(rows)
         result: dict[str, Any] = {
             "unit": rows[0].unit,
-            "higher_is_better": rows[0].higher_is_better,
-            "components": {name: asdict(estimate) for name, estimate in components.items()},
+            "primary": {name: asdict(estimate) for name, estimate in primary.items()},
+            "diagnostics": {name: asdict(estimate) for name, estimate in diagnostics.items()},
         }
-        if include_provisional_scalar:
-            edge = components["agent_edge"].standardized_delta
-            loss = components["human_compatibility_loss"].standardized_delta
-            result["provisional_irp_product"] = edge * loss if edge is not None and loss is not None else None
         scorecard["measures"][measure] = result
     return scorecard
 
@@ -127,8 +123,17 @@ def write_scorecard(scorecard: dict[str, Any], output_dir: Path) -> None:
         handle.write("\n")
     rows = []
     for measure, details in scorecard["measures"].items():
-        for component, estimate in details["components"].items():
-            rows.append({"measure": measure, "unit": details["unit"], "component": component, **estimate})
+        for section in ("primary", "diagnostics"):
+            for component, estimate in details[section].items():
+                rows.append(
+                    {
+                        "measure": measure,
+                        "unit": details["unit"],
+                        "section": section,
+                        "component": component,
+                        **estimate,
+                    }
+                )
     if rows:
         with (output_dir / "irp_scorecard.csv").open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
@@ -136,83 +141,103 @@ def write_scorecard(scorecard: dict[str, Any], output_dir: Path) -> None:
             writer.writerows(rows)
 
 
-def _measure_components(rows: list[Outcome]) -> dict[str, Estimate]:
+def _measure_scorecard(rows: list[Outcome]) -> tuple[dict[str, Estimate], dict[str, Estimate]]:
     if rows[0].agent_type is None:
-        return _system_components(rows)
-    return {
+        return _system_scorecard(rows)
+
+    ai_introduction_effect = _estimate(
+        rows,
+        ("baseline", "mixed", "human"),
+        ("baseline", "human_only", "human"),
+        "humans in mixed AI baseline versus human baseline",
+    )
+    ai_resistant_redesign_effect = _estimate(
+        rows,
+        ("redesign", "human_only", "human"),
+        ("baseline", "human_only", "human"),
+        "humans under AI-resistant redesign versus human baseline",
+    )
+    primary = {
+        "ai_introduction_effect": ai_introduction_effect,
+        "ai_resistant_redesign_effect": ai_resistant_redesign_effect,
+    }
+    diagnostics = {
         "agent_edge": _estimate(
             rows,
             ("baseline", "AI_only", "AI"),
             ("baseline", "human_only", "human"),
             "AI-only baseline minus human-only baseline",
         ),
-        "mixed_entry_stress": _estimate(
-            rows,
-            ("baseline", "human_only", "human"),
-            ("baseline", "mixed", "human"),
-            "human-only baseline minus remaining humans in mixed baseline",
-        ),
-        "redesign_effectiveness": _redesign_effectiveness(rows),
-        "human_compatibility_loss": _estimate(
-            rows,
-            ("baseline", "human_only", "human"),
-            ("redesign", "human_only", "human"),
-            "human-only baseline minus human-only redesign",
-        ),
+        "ai_introduction_effect": ai_introduction_effect,
+        "ai_resistant_redesign_mitigation": _ai_resistant_redesign_mitigation(rows),
+        "ai_resistant_redesign_effect": ai_resistant_redesign_effect,
     }
+    return primary, diagnostics
 
 
-def _system_components(rows: list[Outcome]) -> dict[str, Estimate]:
-    return {
+def _system_scorecard(rows: list[Outcome]) -> tuple[dict[str, Estimate], dict[str, Estimate]]:
+    ai_introduction_effect = _estimate(
+        rows,
+        ("baseline", "mixed", None),
+        ("baseline", "human_only", None),
+        "mixed AI baseline versus human baseline",
+    )
+    ai_resistant_redesign_effect = _estimate(
+        rows,
+        ("redesign", "human_only", None),
+        ("baseline", "human_only", None),
+        "AI-resistant redesign versus human baseline",
+    )
+    primary = {
+        "ai_introduction_effect": ai_introduction_effect,
+        "ai_resistant_redesign_effect": ai_resistant_redesign_effect,
+    }
+    diagnostics = {
         "agent_edge": _estimate(
             rows,
             ("baseline", "AI_only", None),
             ("baseline", "human_only", None),
             "AI-only baseline minus human-only baseline",
         ),
-        "mixed_entry_stress": _estimate(
-            rows,
-            ("baseline", "human_only", None),
-            ("baseline", "mixed", None),
-            "human-only baseline minus mixed baseline",
-        ),
-        "redesign_effectiveness": _redesign_effectiveness(rows, agent_type=None),
-        "human_compatibility_loss": _estimate(
-            rows,
-            ("baseline", "human_only", None),
-            ("redesign", "human_only", None),
-            "human-only baseline minus human-only redesign",
-        ),
+        "ai_introduction_effect": ai_introduction_effect,
+        "ai_resistant_redesign_mitigation": _ai_resistant_redesign_mitigation(rows, agent_type=None),
+        "ai_resistant_redesign_effect": ai_resistant_redesign_effect,
     }
+    return primary, diagnostics
 
 
-def _redesign_effectiveness(
+def _ai_resistant_redesign_mitigation(
     rows: list[Outcome],
     agent_type: str | None = "human",
 ) -> Estimate:
     baseline = _estimate(
         rows,
-        ("baseline", "human_only", agent_type),
         ("baseline", "mixed", agent_type),
-        "baseline entry stress",
+        ("baseline", "human_only", agent_type),
+        "baseline AI introduction effect",
     )
     redesign = _estimate(
         rows,
-        ("redesign", "human_only", agent_type),
         ("redesign", "mixed", agent_type),
-        "redesign entry stress",
+        ("redesign", "human_only", agent_type),
+        "redesign AI introduction effect",
     )
     if baseline.favorable_delta is None or redesign.favorable_delta is None:
-        return Estimate(False, comparison="baseline entry stress minus redesign entry stress")
-    raw = baseline.favorable_delta - redesign.favorable_delta
+        return Estimate(False, comparison="redesign AI introduction effect minus baseline AI introduction effect")
+    raw = redesign.favorable_delta - baseline.favorable_delta
     reference_sd = baseline.reference_standard_deviation
+    relative_delta = None if baseline.favorable_delta == 0 else raw / abs(baseline.favorable_delta)
     return Estimate(
         available=True,
         raw_delta=raw,
         favorable_delta=raw,
         standardized_delta=raw / reference_sd if reference_sd else None,
+        percent_reference_value=baseline.favorable_delta,
+        percent_reference_available=baseline.favorable_delta != 0,
+        relative_delta=relative_delta,
+        relative_percent=relative_delta * 100 if relative_delta is not None else None,
         reference_standard_deviation=reference_sd,
-        comparison="baseline entry stress minus redesign entry stress",
+        comparison="redesign AI introduction effect minus baseline AI introduction effect",
     )
 
 
@@ -228,10 +253,16 @@ def _estimate(
     reference_values = _select(rows, ("baseline", "human_only", reference_agent_type))
     if not first_values or not second_values:
         return Estimate(False, comparison=comparison)
+    reference_mean = mean(reference_values) if reference_values else None
     raw_delta = mean(first_values) - mean(second_values)
-    favorable_delta = raw_delta if rows[0].higher_is_better else -raw_delta
+    favorable_delta = raw_delta
     reference_sd = stdev(reference_values) if len(reference_values) > 1 else 0.0
     standard_error = math.sqrt(_variance(first_values) / len(first_values) + _variance(second_values) / len(second_values))
+    relative_delta = (
+        favorable_delta / abs(reference_mean)
+        if reference_mean is not None and reference_mean != 0
+        else None
+    )
     return Estimate(
         available=True,
         first_count=len(first_values),
@@ -247,6 +278,10 @@ def _estimate(
             favorable_delta + 1.96 * standard_error,
         ),
         reference_standard_deviation=reference_sd,
+        percent_reference_value=reference_mean,
+        percent_reference_available=reference_mean is not None and reference_mean != 0,
+        relative_delta=relative_delta,
+        relative_percent=relative_delta * 100 if relative_delta is not None else None,
         comparison=comparison,
     )
 
@@ -272,12 +307,11 @@ def _variance(values: list[float]) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build an IRP scorecard from auction run bundles.")
+    parser = argparse.ArgumentParser(description="Build an AI Replacement Impact scorecard from auction run bundles.")
     parser.add_argument("runs", type=Path, nargs="+")
     parser.add_argument("--output-dir", type=Path, default=Path("analysis_output"))
-    parser.add_argument("--include-provisional-scalar", action="store_true")
     args = parser.parse_args()
-    scorecard = build_scorecard(auction_outcomes(args.runs), args.include_provisional_scalar)
+    scorecard = build_scorecard(auction_outcomes(args.runs))
     write_scorecard(scorecard, args.output_dir)
     print(args.output_dir)
 

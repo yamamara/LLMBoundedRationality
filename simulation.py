@@ -110,7 +110,11 @@ def run_experiment(config: dict[str, Any]) -> Path:
             row["run_id"] = run_id
             row["game_name"] = config.get("game_name", "unnamed-auction")
             row["population_composition"] = composition
-        output.write_csv(f"{name}.csv", table)
+        output_name = {
+            "decisions": "participant_data",
+            "rounds": "system_data",
+        }[name]
+        output.write_csv(f"{output_name}.csv", table)
 
     output.write_json(
         "summary.json",
