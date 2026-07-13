@@ -60,6 +60,19 @@ AUCTION_SYSTEM_OUTCOMES = [
     OutcomeSpec("allocative_efficiency", "share"),
 ]
 
+COURNOT_OUTCOMES = [
+    OutcomeSpec("profit", "utility_points"),
+    OutcomeSpec("invalid_action", "share"),
+    OutcomeSpec("retry_count", "count"),
+    OutcomeSpec("latency_seconds", "seconds"),
+]
+
+COURNOT_SYSTEM_OUTCOMES = [
+    OutcomeSpec("total_quantity", "units"),
+    OutcomeSpec("total_market_profit", "utility_points"),
+    OutcomeSpec("distance_to_nash", "units"),
+]
+
 
 def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
     outcomes = []
@@ -100,6 +113,58 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
     return outcomes
 
 
+def cournot_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
+    outcomes = []
+    for run_dir in run_dirs:
+        with (run_dir / "participant_data.csv").open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                for spec in COURNOT_OUTCOMES:
+                    if spec.name == "invalid_action":
+                        value = 0.0 if row["valid_action"] == "True" else 1.0
+                    else:
+                        value = float(row[spec.name])
+                    outcomes.append(
+                        Outcome(
+                            run_id=row["run_id"],
+                            measure=spec.name,
+                            unit=spec.unit,
+                            institution=row["institution"],
+                            population_composition=row["population_composition"],
+                            agent_type=row["agent_type"],
+                            value=value,
+                        )
+                    )
+        with (run_dir / "system_data.csv").open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                for spec in COURNOT_SYSTEM_OUTCOMES:
+                    outcomes.append(
+                        Outcome(
+                            run_id=row["run_id"],
+                            measure=spec.name,
+                            unit=spec.unit,
+                            institution=row["institution"],
+                            population_composition=row["population_composition"],
+                            agent_type=None,
+                            value=float(row[spec.name]),
+                        )
+                    )
+    return outcomes
+
+
+def experiment_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
+    run_dirs = list(run_dirs)
+    game_types = set()
+    for run_dir in run_dirs:
+        with (run_dir / "summary.json").open(encoding="utf-8") as handle:
+            summary = json.load(handle)
+        game_types.add(summary.get("game_type", "auction"))
+    if len(game_types) != 1:
+        raise ValueError("All scorecard runs must use the same game type")
+    if game_types == {"cournot"}:
+        return cournot_outcomes(run_dirs)
+    return auction_outcomes(run_dirs)
+
+
 def build_scorecard(outcomes: list[Outcome]) -> dict[str, Any]:
     grouped: dict[str, list[Outcome]] = defaultdict(list)
     for outcome in outcomes:
@@ -109,6 +174,7 @@ def build_scorecard(outcomes: list[Outcome]) -> dict[str, Any]:
         primary, diagnostics = _measure_scorecard(rows)
         result: dict[str, Any] = {
             "unit": rows[0].unit,
+            "descriptive": _descriptive_summary(rows),
             "primary": {name: asdict(estimate) for name, estimate in primary.items()},
             "diagnostics": {name: asdict(estimate) for name, estimate in diagnostics.items()},
         }
@@ -118,11 +184,20 @@ def build_scorecard(outcomes: list[Outcome]) -> dict[str, Any]:
 
 def write_scorecard(scorecard: dict[str, Any], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    with (output_dir / "irp_scorecard.json").open("w", encoding="utf-8") as handle:
+    with (output_dir / "scorecard.json").open("w", encoding="utf-8") as handle:
         json.dump(scorecard, handle, indent=2, sort_keys=True)
         handle.write("\n")
     rows = []
     for measure, details in scorecard["measures"].items():
+        rows.append(
+            {
+                "measure": measure,
+                "unit": details["unit"],
+                "section": "descriptive",
+                "component": "overall",
+                **details["descriptive"],
+            }
+        )
         for section in ("primary", "diagnostics"):
             for component, estimate in details[section].items():
                 rows.append(
@@ -135,10 +210,32 @@ def write_scorecard(scorecard: dict[str, Any], output_dir: Path) -> None:
                     }
                 )
     if rows:
-        with (output_dir / "irp_scorecard.csv").open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        fieldnames = list(dict.fromkeys(key for row in rows for key in row))
+        with (output_dir / "scorecard.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+
+
+def analyze_runs(run_dirs: Iterable[Path], output_dir: Path) -> Path:
+    run_dirs = list(run_dirs)
+    if not run_dirs:
+        raise ValueError("At least one run directory is required")
+    scorecard = build_scorecard(experiment_outcomes(run_dirs))
+    write_scorecard(scorecard, output_dir)
+    return output_dir
+
+
+def _descriptive_summary(rows: list[Outcome]) -> dict[str, Any]:
+    values = [row.value for row in rows]
+    return {
+        "observation_count": len(values),
+        "run_count": len({row.run_id for row in rows}),
+        "mean": mean(values),
+        "standard_deviation": stdev(values) if len(values) > 1 else 0.0,
+        "minimum": min(values),
+        "maximum": max(values),
+    }
 
 
 def _measure_scorecard(rows: list[Outcome]) -> tuple[dict[str, Estimate], dict[str, Estimate]]:
@@ -307,13 +404,11 @@ def _variance(values: list[float]) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build an AI Replacement Impact scorecard from auction run bundles.")
+    parser = argparse.ArgumentParser(description="Build an AI Replacement Impact scorecard from game run bundles.")
     parser.add_argument("runs", type=Path, nargs="+")
-    parser.add_argument("--output-dir", type=Path, default=Path("analysis_output"))
+    parser.add_argument("-o", "--output-dir", type=Path, default=Path("analysis_output"))
     args = parser.parse_args()
-    scorecard = build_scorecard(auction_outcomes(args.runs))
-    write_scorecard(scorecard, args.output_dir)
-    print(args.output_dir)
+    print(analyze_runs(args.runs, args.output_dir))
 
 
 if __name__ == "__main__":

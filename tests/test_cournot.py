@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import csv
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from sandbox.games.cournot.environment import CournotConfig, CournotEnvironment
+from sandbox.models import Action, AgentDecision, Participant
+from sandbox.scorecard import cournot_outcomes
+from simulation import run_pipeline
+
+
+class FixedAgent:
+    name = "fixed"
+
+    def __init__(self, quantity: float):
+        self.quantity = quantity
+        self.calls = 0
+
+    def decide(self, observation):
+        self.calls += 1
+        return AgentDecision(
+            Action("submit_quantity", {"quantity": self.quantity}, "Fixed test action.")
+        )
+
+
+def config(treatment: str = "BEST", rounds: int = 1, revision_probability: float = 2 / 3):
+    return CournotConfig(
+        rounds=rounds,
+        quantity_min=0.0,
+        quantity_max=100.0,
+        quantity_step=0.01,
+        demand_intercept=100.0,
+        marginal_cost=1.0,
+        revision_probability=revision_probability,
+        fixed_payment=150.0,
+        treatment=treatment,
+        seed=7,
+        institution="baseline",
+    )
+
+
+def participants(agents):
+    return [
+        Participant(f"P{index + 1}", agent, "AI", "producer")
+        for index, agent in enumerate(agents)
+    ]
+
+
+class CournotTests(unittest.TestCase):
+    def test_nash_profile_has_expected_price_and_profit(self):
+        environment = CournotEnvironment(
+            config(),
+            participants([FixedAgent(19.8) for _ in range(4)]),
+        )
+
+        rows = environment.run()
+
+        self.assertAlmostEqual(rows["rounds"][0]["total_quantity"], 79.2)
+        self.assertAlmostEqual(rows["rounds"][0]["price"], 20.8)
+        self.assertAlmostEqual(rows["rounds"][0]["distance_to_nash"], 0.0)
+        self.assertAlmostEqual(rows["decisions"][0]["profit"], 392.04)
+
+    def test_best_hides_and_full_reveals_individual_results(self):
+        best = CournotEnvironment(
+            config("BEST", rounds=2),
+            participants([FixedAgent(10 + index) for index in range(4)]),
+        )
+        full = CournotEnvironment(
+            config("FULL", rounds=2),
+            participants([FixedAgent(10 + index) for index in range(4)]),
+        )
+        best.run_round()
+        full.run_round()
+
+        self.assertNotIn("firm_results", best.observe("P1").public_state["completed_rounds"][0])
+        self.assertIn("firm_results", full.observe("P1").public_state["completed_rounds"][0])
+
+    def test_inertia_holds_quantity_without_calling_agent(self):
+        agents = [FixedAgent(10 + index) for index in range(4)]
+        environment = CournotEnvironment(
+            config(rounds=3, revision_probability=0),
+            participants(agents),
+        )
+
+        rows = environment.run()
+
+        self.assertEqual([agent.calls for agent in agents], [1, 1, 1, 1])
+        self.assertTrue(all(not row["revision_allowed"] for row in rows["decisions"][4:]))
+
+    def test_runner_writes_the_existing_pipeline_format(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_config = {
+                "game_name": "cournot-test",
+                "run_id": "cournot-test",
+                "output_dir": str(root),
+                "cournot": {
+                    **config(rounds=3).__dict__,
+                },
+                "participants": [
+                    {
+                        "player_id": f"P{index + 1}",
+                        "agent_type": "AI",
+                        "role": "producer",
+                        "policy": "cournot_best_reply",
+                        "initial_quantity": 10 + index * 10,
+                    }
+                    for index in range(4)
+                ],
+            }
+
+            analysis_output = root / "custom-analysis"
+            run_dir, analysis_dir = run_pipeline(
+                run_config,
+                analyze=True,
+                analysis_output=analysis_output,
+            )
+
+            self.assertTrue((run_dir / "participant_data.csv").exists())
+            self.assertTrue((run_dir / "system_data.csv").exists())
+            with (run_dir / "participant_data.csv").open(newline="", encoding="utf-8") as handle:
+                self.assertEqual(len(list(csv.DictReader(handle))), 12)
+            with (run_dir / "summary.json").open(encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle)["game_type"], "cournot")
+            self.assertTrue(cournot_outcomes([run_dir]))
+            self.assertEqual(analysis_dir, analysis_output)
+            self.assertTrue((analysis_output / "scorecard.json").exists())
+            self.assertTrue((analysis_output / "scorecard.csv").exists())
+            with (analysis_output / "scorecard.json").open(encoding="utf-8") as handle:
+                scorecard = json.load(handle)
+            self.assertEqual(
+                scorecard["measures"]["total_quantity"]["descriptive"]["run_count"],
+                1,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
