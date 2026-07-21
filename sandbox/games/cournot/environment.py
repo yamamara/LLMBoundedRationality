@@ -126,16 +126,22 @@ class CournotEnvironment(Environment):
             if revision_allowed:
                 decision = participant.agent.decide(observation)
                 valid, reason = self.validate_action(decision.action)
-                fallback = self.quantities.get(player_id, self.config.quantity_min)
-                applied_action = (
-                    decision.action
-                    if valid
-                    else Action(
-                        "submit_quantity",
-                        {"quantity": fallback},
-                        "Invalid action replaced with the previous quantity.",
+                if not valid:
+                    self.log(
+                        {
+                            "event_type": "decision_rejected",
+                            "round": self.round,
+                            "player_id": player_id,
+                            "observation": observation.to_dict(),
+                            "returned_action": decision.action.to_dict(),
+                            "valid": False,
+                            "invalid_reason": reason,
+                            "revision_allowed": True,
+                            "agent_metadata": decision.metadata,
+                        }
                     )
-                )
+                    raise ValueError(f"Invalid action from {player_id}: {reason}")
+                applied_action = decision.action
             else:
                 valid, reason = True, None
                 applied_action = Action(

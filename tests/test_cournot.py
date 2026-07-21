@@ -26,6 +26,15 @@ class FixedAgent:
         )
 
 
+class InvalidAgent:
+    name = "invalid"
+
+    def decide(self, observation):
+        return AgentDecision(
+            Action("submit_quantity", {"quantity": 100.001}, "Invalid test action.")
+        )
+
+
 def config(treatment: str = "BEST", rounds: int = 1, revision_probability: float = 2 / 3):
     return CournotConfig(
         rounds=rounds,
@@ -89,6 +98,18 @@ class CournotTests(unittest.TestCase):
 
         self.assertEqual([agent.calls for agent in agents], [1, 1, 1, 1])
         self.assertTrue(all(not row["revision_allowed"] for row in rows["decisions"][4:]))
+
+    def test_invalid_quantity_aborts_instead_of_changing_market_data(self):
+        environment = CournotEnvironment(
+            config(),
+            participants([InvalidAgent(), FixedAgent(20), FixedAgent(20), FixedAgent(20)]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Invalid action from P1"):
+            environment.run()
+
+        self.assertEqual(environment.decision_rows, [])
+        self.assertEqual(environment.round_rows, [])
 
     def test_runner_writes_the_existing_pipeline_format(self):
         with tempfile.TemporaryDirectory() as temporary:

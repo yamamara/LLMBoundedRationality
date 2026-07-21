@@ -17,6 +17,12 @@ Or use four OpenAI-compatible local models:
 python3 simulation.py examples/cournot_llm_run.json
 ```
 
+Run one human against three OpenAI-compatible local models with:
+
+```bash
+python3 simulation.py examples/cournot_human_vs_llm_run.json --analyze
+```
+
 Each run writes `participant_data.csv`, `system_data.csv`, `events.jsonl`, and
 `summary.json`. With `--analyze`, the run also writes `analysis/scorecard.json`
 and `analysis/scorecard.csv`. Choose another analysis directory with:

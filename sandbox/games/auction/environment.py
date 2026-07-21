@@ -119,11 +119,22 @@ class AuctionEnvironment(Environment):
             decision = participant.agent.decide(observation)
             valid, reason = self.validate_action(player_id, decision.action)
 
-            applied_action = (
-                decision.action
-                if valid
-                else Action("submit_bid", {"bid": 0}, "Invalid action replaced with zero bid.")
-            )
+            if not valid:
+                self.log(
+                    {
+                        "event_type": "decision_rejected",
+                        "round": self.round,
+                        "player_id": player_id,
+                        "observation": observation.to_dict(),
+                        "returned_action": decision.action.to_dict(),
+                        "valid": False,
+                        "invalid_reason": reason,
+                        "agent_metadata": decision.metadata,
+                    }
+                )
+                raise ValueError(f"Invalid action from {player_id}: {reason}")
+
+            applied_action = decision.action
 
             self.step(player_id, applied_action)
 
