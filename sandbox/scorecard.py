@@ -10,6 +10,9 @@ from pathlib import Path
 from statistics import mean, stdev
 from typing import Any, Iterable
 
+from sandbox.playback import write_cournot_playback
+from sandbox.visualization import write_cournot_player_visualization
+
 
 @dataclass(frozen=True)
 class OutcomeSpec:
@@ -223,6 +226,11 @@ def analyze_runs(run_dirs: Iterable[Path], output_dir: Path) -> Path:
         raise ValueError("At least one run directory is required")
     scorecard = build_scorecard(experiment_outcomes(run_dirs))
     write_scorecard(scorecard, output_dir)
+    with (run_dirs[0] / "summary.json").open(encoding="utf-8") as handle:
+        game_type = json.load(handle).get("game_type", "auction")
+    if game_type == "cournot":
+        write_cournot_player_visualization(run_dirs, output_dir)
+        write_cournot_playback(run_dirs, output_dir)
     return output_dir
 
 

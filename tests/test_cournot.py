@@ -150,12 +150,45 @@ class CournotTests(unittest.TestCase):
             self.assertEqual(analysis_dir, analysis_output)
             self.assertTrue((analysis_output / "scorecard.json").exists())
             self.assertTrue((analysis_output / "scorecard.csv").exists())
+            self.assertTrue((analysis_output / "cournot_player_scores.csv").exists())
+            self.assertGreater(
+                (analysis_output / "cournot_player_scores.svg").stat().st_size,
+                0,
+            )
             with (analysis_output / "scorecard.json").open(encoding="utf-8") as handle:
                 scorecard = json.load(handle)
             self.assertEqual(
                 scorecard["measures"]["total_quantity"]["descriptive"]["run_count"],
                 1,
             )
+
+    def test_runner_automatically_analyzes_cournot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_config = {
+                "game_name": "cournot-auto-analysis-test",
+                "run_id": "cournot-auto-analysis-test",
+                "output_dir": str(root),
+                "cournot": {**config(rounds=1).__dict__},
+                "participants": [
+                    {
+                        "player_id": f"P{index + 1}",
+                        "agent_type": "AI",
+                        "role": "producer",
+                        "policy": "cournot_best_reply",
+                        "initial_quantity": 20,
+                    }
+                    for index in range(4)
+                ],
+            }
+
+            run_dir, analysis_dir = run_pipeline(run_config)
+
+            self.assertEqual(analysis_dir, run_dir / "analysis")
+            self.assertTrue((analysis_dir / "scorecard.json").exists())
+            self.assertTrue((analysis_dir / "cournot_player_scores.csv").exists())
+            self.assertTrue((analysis_dir / "cournot_player_scores.svg").exists())
+            self.assertTrue((analysis_dir / "cournot_playback.html").exists())
 
 
 if __name__ == "__main__":

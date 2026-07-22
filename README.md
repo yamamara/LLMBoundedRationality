@@ -24,8 +24,12 @@ python3 simulation.py examples/cournot_human_vs_llm_run.json --analyze
 ```
 
 Each run writes `participant_data.csv`, `system_data.csv`, `events.jsonl`, and
-`summary.json`. With `--analyze`, the run also writes `analysis/scorecard.json`
-and `analysis/scorecard.csv`. Choose another analysis directory with:
+`summary.json`. Cournot runs automatically write `analysis/scorecard.json`,
+`analysis/scorecard.csv`, `analysis/cournot_player_scores.csv`, and
+`analysis/cournot_player_scores.svg`. They also include a self-contained
+`analysis/cournot_playback.html` for replaying every decision and settlement.
+The graph shows average profit per player with two-standard-deviation whiskers.
+Choose another analysis directory with:
 
 ```bash
 python3 simulation.py examples/cournot_run.json --analysis-output analysis_output/cournot

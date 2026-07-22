@@ -163,7 +163,8 @@ def run_pipeline(
     analysis_output: Path | None = None,
 ) -> tuple[Path, Path | None]:
     run_dir = run_experiment(config)
-    if not analyze:
+    should_analyze = analyze or analysis_output is not None or "cournot" in config
+    if not should_analyze:
         return run_dir, None
     output_dir = analysis_output or run_dir / "analysis"
     analyze_runs([run_dir], output_dir)
@@ -176,7 +177,7 @@ def main():
     parser.add_argument(
         "--analyze",
         action="store_true",
-        help="Run the scorecard after the simulation.",
+        help="Run the scorecard after the simulation; automatic for Cournot.",
     )
     parser.add_argument(
         "--analysis-output",

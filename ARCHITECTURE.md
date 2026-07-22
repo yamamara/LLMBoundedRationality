@@ -21,6 +21,8 @@ sandbox/
   environment.py                    Abstract environment interface
   serialization.py                  JSON, JSONL, and CSV output
   scorecard.py                      Cross-run outcome extraction and comparison
+  visualization.py                  Cournot player score summary and SVG chart
+  playback.py                       Cournot event timeline and interactive HTML
   agents/
     human_cli.py                     Human auction player
     openai_compatible.py             OpenAI-compatible auction player
@@ -58,9 +60,9 @@ flowchart LR
 4. Run rounds until `environment.is_done()` is true.
 5. Add common run metadata and write the output bundle.
 
-When `--analyze` is present, `run_pipeline()` passes the completed run directory
-to `scorecard.analyze_runs()`. `--analysis-output` selects a custom destination
-and also enables analysis without requiring both flags.
+Cournot runs automatically pass the completed run directory to
+`scorecard.analyze_runs()`. Auction runs do so when `--analyze` is present.
+`--analysis-output` selects a custom destination and also enables analysis.
 
 ## Shared Contracts
 
@@ -131,6 +133,9 @@ Every run directory contains:
 
 With `--analyze`, it also contains `analysis/scorecard.json` and
 `analysis/scorecard.csv` unless `--analysis-output` points elsewhere.
+
+Cournot analysis runs automatically and also writes the player score CSV and
+SVG plus a self-contained `cournot_playback.html` event timeline.
 
 `scorecard.py` reads these files, selects auction or Cournot outcome columns
 from `summary.json`, and applies the same cross-run comparison code.
