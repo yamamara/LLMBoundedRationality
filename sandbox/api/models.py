@@ -9,10 +9,19 @@ from sandbox.prompts import (
     DEFAULT_SYSTEM_PROMPT,
     validate_prompt_templates,
 )
+from sandbox.cournot_prompts import (
+    DEFAULT_COURNOT_AGENT_PROMPT,
+    DEFAULT_COURNOT_SYSTEM_PROMPT,
+    validate_cournot_prompt_templates,
+)
 
 PlayerCount = Literal[2, 4, 6, 8]
 Mechanism = Literal["first_price", "second_price"]
 DescriptionTreatment = Literal["name_only", "concise", "full"]
+CournotTreatment = Literal["BEST", "FULL"]
+CournotPolicy = Literal[
+    "cournot_best_reply", "cournot_openai_compatible", "web_human"
+]
 
 
 class AgentSpec(BaseModel):
@@ -162,6 +171,82 @@ class SimulationRequest(BaseModel):
         if total_runs * self.auction.rounds * required_agents > 50_000:
             raise ValueError("A job may contain at most 50,000 participant decisions")
         return self
+
+
+class CournotAgentSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    player_id: str = Field(min_length=1, max_length=64)
+    policy: CournotPolicy = "cournot_best_reply"
+    initial_quantity: float = Field(default=20.0, ge=0.0, le=100.0)
+    base_url: str | None = None
+    model: str | None = None
+    api_key_env: str | None = None
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=800, ge=32, le=32768)
+    timeout_seconds: float = Field(default=60.0, ge=1.0, le=600.0)
+    memory_rounds: int | None = Field(default=1, ge=0, le=1000)
+    max_retries: int = Field(default=2, ge=1, le=10)
+
+    @model_validator(mode="after")
+    def validate_policy_configuration(self):
+        if self.policy == "cournot_openai_compatible" and not (
+            self.base_url and self.model
+        ):
+            raise ValueError("OpenAI-compatible Cournot agents require base_url and model")
+        return self
+
+
+class CournotPromptSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    system_template: str = Field(
+        default=DEFAULT_COURNOT_SYSTEM_PROMPT, max_length=50_000
+    )
+    agent_template: str = Field(
+        default=DEFAULT_COURNOT_AGENT_PROMPT, max_length=50_000
+    )
+
+    @model_validator(mode="after")
+    def validate_templates(self):
+        validate_cournot_prompt_templates(
+            self.system_template, self.agent_template
+        )
+        return self
+
+
+class CournotSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rounds: int = Field(default=40, ge=1, le=500)
+    treatment: CournotTreatment = "BEST"
+    seed: int = 7
+    revision_probability: float = Field(default=2 / 3, ge=0.0, le=1.0)
+
+
+class CournotSimulationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default="huck-cournot", min_length=1, max_length=100)
+    cournot: CournotSpec = Field(default_factory=CournotSpec)
+    agents: list[CournotAgentSpec]
+    prompts: CournotPromptSpec = Field(default_factory=CournotPromptSpec)
+
+    @model_validator(mode="after")
+    def validate_agents(self):
+        if len(self.agents) != 4:
+            raise ValueError("Exactly four Cournot agents are required")
+        player_ids = [agent.player_id for agent in self.agents]
+        if len(set(player_ids)) != len(player_ids):
+            raise ValueError("Cournot player_id values must be unique")
+        return self
+
+
+class HumanQuantitySubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(min_length=1, max_length=64)
+    quantity: float
 
 
 class PromptPreviewSpec(BaseModel):

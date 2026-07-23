@@ -29,6 +29,29 @@ class AuctionApiClient:
     def results(self, simulation_id: str) -> dict[str, Any]:
         return self._request("GET", f"/simulations/{simulation_id}/results")
 
+    def create_cournot_simulation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/cournot-simulations", json=payload)
+
+    def cournot_status(self, simulation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/cournot-simulations/{simulation_id}")
+
+    def cournot_results(self, simulation_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/cournot-simulations/{simulation_id}/results")
+
+    def cournot_human_decision(self, simulation_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET", f"/cournot-simulations/{simulation_id}/human-decision"
+        )
+
+    def submit_cournot_human_decision(
+        self, simulation_id: str, request_id: str, quantity: float
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/cournot-simulations/{simulation_id}/human-decision",
+            json={"request_id": request_id, "quantity": quantity},
+        )
+
     def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         try:
             response = requests.request(method, self.base_url + path, timeout=self.timeout, **kwargs)

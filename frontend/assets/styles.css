@@ -3,6 +3,11 @@ body { margin: 0; }
 .app-shell { max-width: 1500px; margin: auto; padding: 24px; }
 header { padding: 12px 4px 20px; }
 header h1 { margin-bottom: 4px; }
+.experiment-switcher { margin: 0 0 20px; }
+.experiment-toggle { display: inline-flex; border: 1px solid #777; }
+.experiment-toggle label { min-width: 110px; padding: 10px 16px; text-align: center; cursor: pointer; }
+.experiment-toggle label + label { border-left: 1px solid #777; }
+.experiment-toggle input { margin-right: 8px; }
 .panel { background: white; border: 1px solid #999; border-radius: 0; padding: 20px; margin-bottom: 20px; box-shadow: none; }
 .control-grid, .agent-grid, .summary-grid, .graph-grid { display: grid; gap: 14px; }
 .control-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
@@ -39,4 +44,29 @@ progress { width: 100%; height: 18px; }
 .provider-status { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 10px; }
 .plot-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 18px; }
 #prompt-detail { margin: 12px 0; }
-@media (max-width: 700px) { .app-shell { padding: 10px; } .graph-grid { grid-template-columns: 1fr; } }
+.cournot-panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.cournot-panel-heading h2 { margin: 0 0 14px; }
+.cournot-run-status { color: #52606d; font-size: .9rem; }
+.cournot-settings-band { border-top: 1px solid #aaa; margin-top: 20px; padding-top: 16px; }
+.cournot-settings-band h3 { margin: 0 0 14px; font-size: 1.05rem; }
+.agent-settings { display: flex; flex-direction: column; gap: 10px; }
+.cournot-agent-card { align-self: start; }
+.human-decision-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 340px; overflow: auto; background: #f6f6f6; border: 1px solid #bbb; padding: 10px; }
+.cournot-artifact { width: 100%; padding: 18px 0; border-top: 1px solid #aaa; }
+.cournot-artifact h3 { margin: 0 0 14px; font-size: 1.05rem; }
+.cournot-artifact-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.cournot-artifact-heading h3 { margin: 0; }
+.cournot-error-control { display: flex; align-items: center; gap: 10px; font-size: .85rem; font-weight: 600; }
+.cournot-error-control #cournot-error-mode { display: inline-flex; border: 1px solid #777; }
+.cournot-error-control #cournot-error-mode label { padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+.cournot-error-control #cournot-error-mode label + label { border-left: 1px solid #777; }
+.cournot-error-control input { margin-right: 5px; }
+#cournot-score-graph { display: block; width: 100%; max-height: 620px; object-fit: contain; object-position: left top; }
+#cournot-playback-frame { display: block; width: 100%; height: min(820px, 85vh); border: 1px solid #aaa; box-sizing: border-box; background: #fff; }
+@media (max-width: 700px) {
+  .app-shell { padding: 10px; }
+  .graph-grid { grid-template-columns: 1fr; }
+  .cournot-panel-heading { align-items: flex-start; flex-direction: column; gap: 0; }
+  .cournot-artifact-heading { align-items: flex-start; flex-direction: column; }
+  #cournot-playback-frame { height: 760px; }
+}

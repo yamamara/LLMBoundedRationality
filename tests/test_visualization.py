@@ -28,10 +28,14 @@ class VisualizationTests(unittest.TestCase):
             self.assertEqual(p1.standard_deviation, 1.0)
             self.assertEqual(p1.lower_two_sd, 0.0)
             self.assertEqual(p1.upper_two_sd, 4.0)
+            self.assertAlmostEqual(p1.ci95_half_width, 4.303 / (3 ** 0.5))
+            self.assertAlmostEqual(p1.ci95_lower, 2.0 - 4.303 / (3 ** 0.5))
+            self.assertAlmostEqual(p1.ci95_upper, 2.0 + 4.303 / (3 ** 0.5))
             self.assertEqual(p1.total_profit, 6.0)
             self.assertEqual(p2.standard_deviation, 0.0)
             self.assertEqual(p2.lower_two_sd, -2.0)
             self.assertEqual(p2.upper_two_sd, -2.0)
+            self.assertEqual(p2.ci95_half_width, 0.0)
 
     def test_cournot_analysis_writes_csv_and_valid_svg(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -59,6 +63,14 @@ class VisualizationTests(unittest.TestCase):
             self.assertIn("+/- 2 SD", svg)
             self.assertIn("#2563eb", svg)
             self.assertIn("#d97706", svg)
+            ci95_svg_path = output_dir / "cournot_player_scores_ci95.svg"
+            self.assertGreater(ci95_svg_path.stat().st_size, 0)
+            ci95_root = ET.parse(ci95_svg_path).getroot()
+            self.assertEqual(ci95_root.tag, "{http://www.w3.org/2000/svg}svg")
+            self.assertIn(
+                "95% t confidence interval",
+                ci95_svg_path.read_text(encoding="utf-8"),
+            )
             playback = output_dir / "cournot_playback.html"
             self.assertGreater(playback.stat().st_size, 0)
             html = playback.read_text(encoding="utf-8")
@@ -140,6 +152,7 @@ class VisualizationTests(unittest.TestCase):
 
             self.assertFalse((output_dir / "cournot_player_scores.csv").exists())
             self.assertFalse((output_dir / "cournot_player_scores.svg").exists())
+            self.assertFalse((output_dir / "cournot_player_scores_ci95.svg").exists())
             self.assertFalse((output_dir / "cournot_playback.html").exists())
 
     def write_cournot_run(self, run_dir: Path) -> None:

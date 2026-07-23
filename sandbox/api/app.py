@@ -3,9 +3,16 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
 
+from sandbox.api.cournot_jobs import COURNOT_TERMINAL_STATUSES, CournotJobManager
 from sandbox.api.jobs import TERMINAL_STATUSES, SimulationJobManager
-from sandbox.api.models import PromptPreviewSpec, SimulationRequest
+from sandbox.api.models import (
+    CournotSimulationRequest,
+    HumanQuantitySubmission,
+    PromptPreviewSpec,
+    SimulationRequest,
+)
 from sandbox.games.auction.mechanisms import MECHANISM_NAMES, mechanism_description
 from sandbox.models import LegalActions, Observation
 from sandbox.prompts import (
@@ -16,16 +23,22 @@ from sandbox.prompts import (
 )
 
 
-def create_api_app(manager: SimulationJobManager | None = None) -> FastAPI:
+def create_api_app(
+    manager: SimulationJobManager | None = None,
+    cournot_manager: CournotJobManager | None = None,
+) -> FastAPI:
     job_manager = manager or SimulationJobManager()
+    cournot_jobs = cournot_manager or CournotJobManager()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         yield
         job_manager.close()
+        cournot_jobs.close()
 
-    app = FastAPI(title="LLM Bounded Rationality Auction API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="LLM Bounded Rationality API", version="1.0.0", lifespan=lifespan)
     app.state.job_manager = job_manager
+    app.state.cournot_job_manager = cournot_jobs
 
     @app.get("/api/v1/health")
     def health():
@@ -34,6 +47,72 @@ def create_api_app(manager: SimulationJobManager | None = None) -> FastAPI:
     @app.get("/api/v1/providers")
     def providers():
         return {"profiles": [profile.public_dict() for profile in job_manager.profiles.values()]}
+
+    @app.post("/api/v1/cournot-simulations", status_code=status.HTTP_202_ACCEPTED)
+    def create_cournot_simulation(request: CournotSimulationRequest):
+        return cournot_jobs.submit(request).public_dict()
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}")
+    def cournot_simulation_status(simulation_id: str):
+        state = cournot_jobs.get(simulation_id)
+        if state is None:
+            raise HTTPException(404, "Cournot simulation not found")
+        return state.public_dict()
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/results")
+    def cournot_simulation_results(simulation_id: str):
+        state = cournot_jobs.get(simulation_id)
+        if state is None:
+            raise HTTPException(404, "Cournot simulation not found")
+        if state.status not in COURNOT_TERMINAL_STATUSES:
+            raise HTTPException(409, "Cournot simulation is not complete")
+        result = cournot_jobs.get_results(simulation_id)
+        if result is None:
+            raise HTTPException(404, state.error or "Cournot results not found")
+        return result
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/human-decision")
+    def pending_cournot_human_decision(simulation_id: str):
+        try:
+            pending = cournot_jobs.pending_human_decision(simulation_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"pending": pending}
+
+    @app.post("/api/v1/cournot-simulations/{simulation_id}/human-decision")
+    def submit_cournot_human_decision(
+        simulation_id: str, submission: HumanQuantitySubmission
+    ):
+        try:
+            cournot_jobs.submit_human_decision(
+                simulation_id, submission.request_id, submission.quantity
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"accepted": True}
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/graph")
+    def cournot_graph(simulation_id: str):
+        path = cournot_jobs.artifact_path(simulation_id, "cournot_player_scores.svg")
+        if path is None:
+            raise HTTPException(404, "Cournot graph not found")
+        return FileResponse(path, media_type="image/svg+xml")
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/graph-ci95")
+    def cournot_graph_ci95(simulation_id: str):
+        path = cournot_jobs.artifact_path(
+            simulation_id, "cournot_player_scores_ci95.svg"
+        )
+        if path is None:
+            raise HTTPException(404, "Cournot confidence interval graph not found")
+        return FileResponse(path, media_type="image/svg+xml")
+
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/playback")
+    def cournot_playback(simulation_id: str):
+        path = cournot_jobs.artifact_path(simulation_id, "cournot_playback.html")
+        if path is None:
+            raise HTTPException(404, "Cournot playback not found")
+        return FileResponse(path, media_type="text/html")
 
     @app.get("/api/v1/prompts")
     def prompt_configuration():

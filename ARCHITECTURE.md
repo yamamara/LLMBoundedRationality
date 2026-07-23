@@ -27,20 +27,25 @@ sandbox/
   scorecard.py                      Cross-run outcome extraction and comparison
   visualization.py                  Cournot player score summary and SVG chart
   playback.py                       Cournot event timeline and interactive HTML
+  cournot_prompts.py                Cournot-only templates and placeholders
   agents/
     human_cli.py                     Human auction player
     openai_compatible.py             OpenAI-compatible auction player
     cournot_best_reply.py             Scripted Cournot player
     cournot_openai_compatible.py      OpenAI-compatible Cournot player
+    web_human.py                      Browser-human adapter and decision broker
     llm_auction.py                     Provider-neutral auction policy
   providers/                           OpenAI, Claude, Gemini, and local Llama adapters
-  api/                                 Validation, persistent jobs, aggregates, REST API
+  api/                                 Validation, game job managers, aggregates, REST API
+    jobs.py                            Auction batch manager
+    cournot_jobs.py                    Cournot run and analysis manager
   games/
     auction/environment.py           Auction rules and settlement
     cournot/environment.py           Cournot rules and settlement
 examples/                            Runnable JSON configurations
 tests/test_cournot.py                Cournot unit and pipeline tests
 frontend/                             Dash UI, API client, figures, and CSS
+  cournot_results.py                  Cournot form, job polling, graph controls, and playback
 webapp.py                             FastAPI/Dash composition entrypoint
 ```
 
@@ -61,11 +66,19 @@ flowchart LR
     D --> S["scorecard.py"]
 ```
 
-The web flow is `Dash -> /api/v1 -> SimulationJobManager ->
-AuctionEnvironment -> run bundles/results.json`. The manager runs separate
-simulations concurrently within configured limits, while each strict auction
-round snapshots all observations and requests up to four sealed bids at once
-behind a process-wide provider-call semaphore.
+The frontend experiment toggle selects one of two parallel web flows:
+
+- `Dash -> /api/v1/simulations -> SimulationJobManager -> AuctionEnvironment`
+- `Dash -> /api/v1/cournot-simulations -> CournotJobManager -> simulation.py`
+
+The Cournot manager reuses the normal runner and automatic analysis pipeline.
+It returns graph and playback URLs scoped to its own simulation ID, so the UI
+cannot accidentally display artifacts from another run.
+
+Cournot agent assignment is per player. Script and model players execute
+normally through `Agent.decide()`. A browser-human agent publishes its current
+`Observation` through `HumanDecisionBroker`, waits without terminal input, and
+resumes when the job-specific API accepts a legal quantity.
 
 Prompt templates are rendered by `sandbox/prompts.py` from one participant's
 `Observation`. The renderer has no reference to the environment's full state.
@@ -91,6 +104,11 @@ taking precedence for models and endpoints. API keys remain server-side.
 - `POST /api/v1/simulations` validates and queues a batch.
 - `GET /api/v1/simulations/{id}` reports progress and errors.
 - `GET /api/v1/simulations/{id}/results` returns authoritative rows and aggregates.
+- `POST /api/v1/cournot-simulations` validates and queues one Cournot run.
+- `GET /api/v1/cournot-simulations/{id}` reports its status.
+- `GET /api/v1/cournot-simulations/{id}/results` returns its artifact URLs.
+- Cournot `graph` and `playback` routes serve only that completed job's files.
+- Cournot `human-decision` routes read and answer the current browser-human turn.
 
 Job and result state is persisted under `runs/web/<simulation-id>/`. A server
 restart marks unfinished in-process jobs failed; completed results remain
@@ -184,7 +202,8 @@ With `--analyze`, it also contains `analysis/scorecard.json` and
 `analysis/scorecard.csv` unless `--analysis-output` points elsewhere.
 
 Cournot analysis runs automatically and also writes the player score CSV and
-SVG plus a self-contained `cournot_playback.html` event timeline.
+SVG for each whisker mode (`+/- 2 SD` and 95% Student-t confidence interval),
+plus a self-contained `cournot_playback.html` event timeline.
 
 `scorecard.py` reads these files, selects auction or Cournot outcome columns
 from `summary.json`, and applies the same cross-run comparison code.

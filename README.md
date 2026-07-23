@@ -25,10 +25,14 @@ python3 simulation.py examples/cournot_human_vs_llm_run.json --analyze
 
 Each run writes `participant_data.csv`, `system_data.csv`, `events.jsonl`, and
 `summary.json`. Cournot runs automatically write `analysis/scorecard.json`,
-`analysis/scorecard.csv`, `analysis/cournot_player_scores.csv`, and
-`analysis/cournot_player_scores.svg`. They also include a self-contained
+`analysis/scorecard.csv`, `analysis/cournot_player_scores.csv`,
+`analysis/cournot_player_scores.svg`, and
+`analysis/cournot_player_scores_ci95.svg`. The frontend can switch the graph
+whiskers between two standard deviations and a 95% Student-t confidence
+interval. Cournot analyses also include a self-contained
 `analysis/cournot_playback.html` for replaying every decision and settlement.
-The graph shows average profit per player with two-standard-deviation whiskers.
+The graph shows average profit per player and lets the frontend switch between
+two-standard-deviation whiskers and 95% confidence intervals.
 Choose another analysis directory with:
 
 ```bash
@@ -40,6 +44,18 @@ Analyze or compare existing run directories independently with:
 ```bash
 python3 -m sandbox.scorecard RUN_DIR [RUN_DIR ...] -o analysis_output/comparison
 ```
+
+View completed Cournot graphs and event playbacks in the frontend with:
+
+```bash
+python3 -m pip install -r frontend/requirements.txt
+python3 -m uvicorn webapp:app --reload
+```
+
+Open `http://127.0.0.1:8000`, switch the experiment control to `Cournot`,
+configure hyperparameters and editable prompts, then assign each player as a
+human, model, or script. Browser-human turns appear on the page while the job
+is running. The graph and playback appear only after that job completes.
 
 ### Contributors
 

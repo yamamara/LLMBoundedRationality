@@ -15,6 +15,7 @@ from sandbox.serialization import OutputWriter
 from sandbox.agents.cournot_best_reply import CournotBestReplyAgent
 from sandbox.agents.cournot_openai_compatible import CournotOpenAICompatibleAgent
 from sandbox.agents.human_cli import HumanCliAgent
+from sandbox.agents.web_human import WebHumanAgent
 from sandbox.agents.openai_compatible import OpenAICompatibleAgent, OpenAICompatibleConfig
 from sandbox.agents.llm_auction import LLMAuctionAgent, LLMAuctionAgentConfig
 from sandbox.providers import build_provider
@@ -22,6 +23,11 @@ from sandbox.games.auction.environment import AuctionConfig, AuctionEnvironment
 from sandbox.games.cournot.environment import CournotConfig, CournotEnvironment
 from sandbox.scorecard import analyze_runs
 from sandbox.prompts import DEFAULT_AGENT_PROMPT, DEFAULT_SYSTEM_PROMPT, validate_prompt_templates
+from sandbox.cournot_prompts import (
+    DEFAULT_COURNOT_AGENT_PROMPT,
+    DEFAULT_COURNOT_SYSTEM_PROMPT,
+    validate_cournot_prompt_templates,
+)
 
 
 def load_local_env(path: Path = Path(".env")) -> None:
@@ -73,6 +79,10 @@ def agent_builder(config: dict[str, Any]) -> Agent:
 
     if agent_type == "human" and policy == "human_cli":
         return HumanCliAgent()
+    if agent_type == "human" and policy == "web_human":
+        return WebHumanAgent(
+            config["job_id"], config.get("timeout_seconds", 3600.0)
+        )
     if agent_type == "AI" and policy == "openai_compatible":
         return OpenAICompatibleAgent(
             OpenAICompatibleConfig(
@@ -124,7 +134,13 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                 max_retries=config.get("max_retries", 2),
                 reasoning_effort=config.get("reasoning_effort", "none"),
                 response_format=config.get("response_format"),
-            )
+            ),
+            system_prompt_template=config.get(
+                "system_prompt_template", DEFAULT_COURNOT_SYSTEM_PROMPT
+            ),
+            agent_prompt_template=config.get(
+                "agent_prompt_template", DEFAULT_COURNOT_AGENT_PROMPT
+            ),
         )
     if agent_type == "AI" and policy == "cournot_best_reply":
         return CournotBestReplyAgent(config.get("initial_quantity", 20.0))
@@ -147,9 +163,15 @@ def run_experiment(config: dict[str, Any]) -> Path:
 
     output = OutputWriter(run_dir)
     prompts = config.get("prompts", {})
-    system_template = prompts.get("system_template", DEFAULT_SYSTEM_PROMPT)
-    agent_template = prompts.get("agent_template", DEFAULT_AGENT_PROMPT)
-    validate_prompt_templates(system_template, agent_template)
+    is_cournot = "cournot" in config
+    default_system = DEFAULT_COURNOT_SYSTEM_PROMPT if is_cournot else DEFAULT_SYSTEM_PROMPT
+    default_agent = DEFAULT_COURNOT_AGENT_PROMPT if is_cournot else DEFAULT_AGENT_PROMPT
+    system_template = prompts.get("system_template", default_system)
+    agent_template = prompts.get("agent_template", default_agent)
+    if is_cournot:
+        validate_cournot_prompt_templates(system_template, agent_template)
+    else:
+        validate_prompt_templates(system_template, agent_template)
     participant_configs = copy.deepcopy(config["participants"])
     for participant in participant_configs:
         if participant.get("policy") == "llm_auction":

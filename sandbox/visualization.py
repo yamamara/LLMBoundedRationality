@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import csv
+import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
 from statistics import mean, stdev
 from typing import Iterable
+
+from sandbox.statistics import t_critical_95
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,9 @@ class CournotPlayerScore:
     standard_deviation: float
     lower_two_sd: float
     upper_two_sd: float
+    ci95_half_width: float
+    ci95_lower: float
+    ci95_upper: float
     minimum_profit: float
     maximum_profit: float
     total_profit: float
@@ -42,6 +48,11 @@ def cournot_player_scores(run_dirs: Iterable[Path]) -> list[CournotPlayerScore]:
     for (run_id, player_id, agent, agent_type), profits in sorted(grouped.items()):
         average = mean(profits)
         deviation = stdev(profits) if len(profits) > 1 else 0.0
+        ci95_half_width = (
+            t_critical_95(len(profits) - 1) * deviation / math.sqrt(len(profits))
+            if len(profits) > 1
+            else 0.0
+        )
         scores.append(
             CournotPlayerScore(
                 run_id=run_id,
@@ -53,6 +64,9 @@ def cournot_player_scores(run_dirs: Iterable[Path]) -> list[CournotPlayerScore]:
                 standard_deviation=deviation,
                 lower_two_sd=average - 2 * deviation,
                 upper_two_sd=average + 2 * deviation,
+                ci95_half_width=ci95_half_width,
+                ci95_lower=average - ci95_half_width,
+                ci95_upper=average + ci95_half_width,
                 minimum_profit=min(profits),
                 maximum_profit=max(profits),
                 total_profit=sum(profits),
@@ -80,20 +94,39 @@ def write_cournot_player_visualization(
         writer.writerows(asdict(score) for score in scores)
 
     (output_dir / "cournot_player_scores.svg").write_text(
-        _cournot_score_svg(scores),
+        _cournot_score_svg(scores, error_mode="two_sd"),
+        encoding="utf-8",
+    )
+    (output_dir / "cournot_player_scores_ci95.svg").write_text(
+        _cournot_score_svg(scores, error_mode="ci95"),
         encoding="utf-8",
     )
 
 
-def _cournot_score_svg(scores: list[CournotPlayerScore]) -> str:
+def _cournot_score_svg(
+    scores: list[CournotPlayerScore], error_mode: str = "two_sd"
+) -> str:
+    if error_mode == "two_sd":
+        lower_bound = lambda score: score.lower_two_sd
+        upper_bound = lambda score: score.upper_two_sd
+        whisker_description = "plus or minus two sample standard deviations"
+        whisker_label = "+/- 2 SD"
+    elif error_mode == "ci95":
+        lower_bound = lambda score: score.ci95_lower
+        upper_bound = lambda score: score.ci95_upper
+        whisker_description = "95% Student-t confidence intervals"
+        whisker_label = "95% t confidence interval"
+    else:
+        raise ValueError(f"Unsupported Cournot error mode: {error_mode}")
+
     width = max(760, 180 + 120 * len(scores))
     height = 540
     left, right, top, bottom = 90, 40, 85, 125
     plot_width = width - left - right
     plot_height = height - top - bottom
 
-    domain_min = min(0.0, *(score.lower_two_sd for score in scores))
-    domain_max = max(0.0, *(score.upper_two_sd for score in scores))
+    domain_min = min(0.0, *(lower_bound(score) for score in scores))
+    domain_max = max(0.0, *(upper_bound(score) for score in scores))
     span = domain_max - domain_min
     if span == 0:
         domain_min, domain_max = -1.0, 1.0
@@ -117,12 +150,12 @@ def _cournot_score_svg(scores: list[CournotPlayerScore]) -> str:
         'aria-labelledby="chart-title chart-description">',
         '<title id="chart-title">Cournot average profit by player</title>',
         '<desc id="chart-description">Bars show average profit across all completed rounds. '
-        'Whiskers show plus or minus two sample standard deviations.</desc>',
+        f'Whiskers show {whisker_description}.</desc>',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         f'<text x="{left}" y="34" font-family="sans-serif" font-size="22" '
         'font-weight="700" fill="#111827">Cournot Average Profit by Player</text>',
         f'<text x="{left}" y="58" font-family="sans-serif" font-size="13" '
-        'fill="#4b5563">Bars: average profit across all rounds | Whiskers: +/- 2 SD</text>',
+        f'fill="#4b5563">Bars: average profit across all rounds | Whiskers: {whisker_label}</text>',
     ]
 
     for index in range(6):
@@ -152,7 +185,7 @@ def _cournot_score_svg(scores: list[CournotPlayerScore]) -> str:
         run_label = score.run_id if len(score.run_id) <= 18 else score.run_id[:15] + "..."
         title = escape(
             f"{score.run_id} / {score.player_id}: mean {score.average_profit:.2f}, "
-            f"SD {score.standard_deviation:.2f}"
+            f"{whisker_label} [{lower_bound(score):.2f}, {upper_bound(score):.2f}]"
         )
         parts.extend(
             [
@@ -161,14 +194,14 @@ def _cournot_score_svg(scores: list[CournotPlayerScore]) -> str:
                 f'<title>{title}</title>',
                 f'<rect x="{center_x - bar_width / 2:.2f}" y="{bar_y:.2f}" '
                 f'width="{bar_width:.2f}" height="{bar_height:.2f}" fill="{color}"/>',
-                f'<line x1="{center_x:.2f}" y1="{y(score.lower_two_sd):.2f}" '
-                f'x2="{center_x:.2f}" y2="{y(score.upper_two_sd):.2f}" '
+                f'<line x1="{center_x:.2f}" y1="{y(lower_bound(score)):.2f}" '
+                f'x2="{center_x:.2f}" y2="{y(upper_bound(score)):.2f}" '
                 'stroke="#111827" stroke-width="2"/>',
-                f'<line x1="{center_x - 10:.2f}" y1="{y(score.lower_two_sd):.2f}" '
-                f'x2="{center_x + 10:.2f}" y2="{y(score.lower_two_sd):.2f}" '
+                f'<line x1="{center_x - 10:.2f}" y1="{y(lower_bound(score)):.2f}" '
+                f'x2="{center_x + 10:.2f}" y2="{y(lower_bound(score)):.2f}" '
                 'stroke="#111827" stroke-width="2"/>',
-                f'<line x1="{center_x - 10:.2f}" y1="{y(score.upper_two_sd):.2f}" '
-                f'x2="{center_x + 10:.2f}" y2="{y(score.upper_two_sd):.2f}" '
+                f'<line x1="{center_x - 10:.2f}" y1="{y(upper_bound(score)):.2f}" '
+                f'x2="{center_x + 10:.2f}" y2="{y(upper_bound(score)):.2f}" '
                 'stroke="#111827" stroke-width="2"/>',
                 f'<text x="{center_x:.2f}" y="{label_y:.2f}" text-anchor="middle" '
                 f'font-family="sans-serif" font-size="12" font-weight="700" '
@@ -204,4 +237,3 @@ def _cournot_score_svg(scores: list[CournotPlayerScore]) -> str:
         ]
     )
     return "\n".join(parts)
-

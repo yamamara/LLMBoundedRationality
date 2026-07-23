@@ -6,6 +6,10 @@ from typing import Any
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html, no_update
 
 from frontend.api_client import AuctionApiClient
+from frontend.cournot_results import (
+    cournot_experiment,
+    register_cournot_callbacks,
+)
 from frontend.figures import TREATMENT_DIMENSIONS, build_research_figures
 from sandbox.prompts import DEFAULT_AGENT_PROMPT, DEFAULT_SYSTEM_PROMPT
 
@@ -61,7 +65,7 @@ def _agent_card(index: int):
 
 def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
     client = api_client or AuctionApiClient()
-    app = Dash(__name__, suppress_callback_exceptions=True, title="Sealed-Bid Auction Lab")
+    app = Dash(__name__, suppress_callback_exceptions=True, title="Bounded Rationality Lab")
     app.layout = html.Div(
         [
             dcc.Location(id="location"),
@@ -70,7 +74,27 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
             dcc.Store(id="provider-store"),
             dcc.Store(id="prompt-defaults", data={"system_template": DEFAULT_SYSTEM_PROMPT, "agent_template": DEFAULT_AGENT_PROMPT}),
             dcc.Interval(id="progress-poll", interval=1000, disabled=True),
-            html.Header([html.H1("Sealed-Bid Auction Research Lab"), html.P("Configurable AI bidders, private valuations, and reproducible treatment matrices.")]),
+            html.Header(
+                [
+                    html.H1("Bounded Rationality Research Lab"),
+                    html.P("Auction experiments and Cournot market simulations."),
+                ]
+            ),
+            html.Section(
+                [
+                    dcc.RadioItems(
+                        id="experiment-toggle",
+                        options=[
+                            {"label": "Auction", "value": "auction"},
+                            {"label": "Cournot", "value": "cournot"},
+                        ],
+                        value="auction",
+                        inline=True,
+                        className="experiment-toggle",
+                    )
+                ],
+                className="experiment-switcher",
+            ),
             html.Section(
                 [
                     html.Div(
@@ -148,6 +172,7 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
                     html.Div(id="status-message", className="status-message"),
                     html.Progress(id="progress-bar", value=0, max=100),
                 ],
+                id="auction-configuration",
                 className="panel",
             ),
             html.Section(
@@ -155,7 +180,9 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
                     html.H2("Results"),
                     html.Div(id="summary-cards", className="summary-grid"),
                     dash_table.DataTable(
-                        id="results-table", sort_action="native", filter_action="native",
+                        id="results-table", data=[],
+                        columns=[{"name": "", "id": "_placeholder"}],
+                        sort_action="native", filter_action="native",
                         page_action="native", page_size=25, fixed_rows={"headers": True},
                         row_selectable="single",
                         style_table={"overflowX": "auto", "maxHeight": "520px"},
@@ -185,6 +212,7 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
                         style={"display": "none"},
                     ),
                 ],
+                id="auction-results",
                 className="panel",
             ),
             html.Section(
@@ -194,11 +222,25 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
                     dcc.Slider(id="round-slider", min=0, max=0, step=1, value=0, marks={0: "0"}),
                     html.Div(id="round-inspector", className="agent-grid"),
                 ],
+                id="auction-round-inspector",
                 className="panel round-panel",
             ),
+            cournot_experiment(),
         ],
         className="app-shell",
     )
+
+    @app.callback(
+        Output("auction-configuration", "style"),
+        Output("auction-results", "style"),
+        Output("auction-round-inspector", "style"),
+        Output("cournot-experiment", "style"),
+        Input("experiment-toggle", "value"),
+    )
+    def switch_experiment(experiment):
+        if experiment == "cournot":
+            return {"display": "none"}, {"display": "none"}, {"display": "none"}, {}
+        return {}, {}, {}, {"display": "none"}
 
     @app.callback(
         [Output(f"agent-{index}-profile", "options") for index in range(1, 9)]
@@ -451,7 +493,14 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
     )
     def render_results(results):
         if not results:
-            return [], [], [], [], None, {"display": "none"}
+            return (
+                [],
+                [],
+                [{"name": "", "id": "_placeholder"}],
+                [],
+                None,
+                {"display": "none"},
+            )
         batch = results["batch_aggregates"]
         cards = [
             html.Div([html.Span(label), html.Strong("—" if value is None else f"{value:.3f}" if isinstance(value, float) else value)], className="metric-card")
@@ -569,4 +618,5 @@ def create_dash_app(api_client: AuctionApiClient | None = None) -> Dash:
             for row in rows
         ]
 
+    register_cournot_callbacks(app, client)
     return app

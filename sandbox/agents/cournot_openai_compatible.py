@@ -7,6 +7,11 @@ from copy import deepcopy
 from typing import Any
 
 from sandbox.agents.openai_compatible import OpenAICompatibleAgent, OpenAICompatibleConfig
+from sandbox.cournot_prompts import (
+    DEFAULT_COURNOT_AGENT_PROMPT,
+    DEFAULT_COURNOT_SYSTEM_PROMPT,
+    render_cournot_prompts,
+)
 from sandbox.models import Action, AgentDecision, Observation
 
 
@@ -66,10 +71,17 @@ def validate_quantity(observation: Observation, action: Action) -> str | None:
 
 
 class CournotOpenAICompatibleAgent(OpenAICompatibleAgent):
-    def __init__(self, config: OpenAICompatibleConfig):
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        system_prompt_template: str = DEFAULT_COURNOT_SYSTEM_PROMPT,
+        agent_prompt_template: str = DEFAULT_COURNOT_AGENT_PROMPT,
+    ):
         if config.response_format is None:
             config.response_format = cournot_quantity_response_format()
         super().__init__(config)
+        self.system_prompt_template = system_prompt_template
+        self.agent_prompt_template = agent_prompt_template
 
     def decide(self, observation: Observation) -> AgentDecision:
         messages = self.build_prompts(observation)
@@ -122,18 +134,18 @@ class CournotOpenAICompatibleAgent(OpenAICompatibleAgent):
             observation_dict["public_state"]["completed_rounds"] = (
                 history[-self.config.memory_rounds :] if self.config.memory_rounds else []
             )
-        observation_dict["instruction"] = (
-            "Choose your production quantity. Return JSON only with "
-            "action_type='submit_quantity', value as an object like {'quantity': 19.8}, "
-            "and a brief reasoning string. Do not reveal chain-of-thought."
+        rendered = render_cournot_prompts(
+            self.system_prompt_template,
+            self.agent_prompt_template,
+            Observation(
+                player_id=observation.player_id,
+                round=observation.round,
+                public_state=observation_dict["public_state"],
+                private_state=observation_dict["private_state"],
+                legal_actions=observation.legal_actions,
+            ),
         )
         return [
-            {
-                "role": "system",
-                "content": (
-                    "You operate one firm in a repeated Cournot market. "
-                    "Maximize your own profit and follow the provided rules exactly."
-                ),
-            },
-            {"role": "user", "content": json.dumps(observation_dict, sort_keys=True)},
+            {"role": "system", "content": rendered.system},
+            {"role": "user", "content": rendered.agent},
         ]
