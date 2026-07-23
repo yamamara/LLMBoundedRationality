@@ -53,6 +53,7 @@ class Estimate:
 
 AUCTION_OUTCOMES = [
     OutcomeSpec("payoff", "utility_points"),
+    OutcomeSpec("truthfulness_deviation", "bid_points"),
     OutcomeSpec("regret", "utility_points"),
     OutcomeSpec("invalid_action", "share"),
     OutcomeSpec("retry_count", "count"),
@@ -61,6 +62,7 @@ AUCTION_OUTCOMES = [
 
 AUCTION_SYSTEM_OUTCOMES = [
     OutcomeSpec("allocative_efficiency", "share"),
+    OutcomeSpec("revenue", "payment_points"),
 ]
 
 COURNOT_OUTCOMES = [
@@ -76,6 +78,17 @@ COURNOT_SYSTEM_OUTCOMES = [
     OutcomeSpec("distance_to_nash", "units"),
 ]
 
+PREFERRED_DIRECTIONS = {
+    "revenue": "higher",
+    "allocative_efficiency": "higher",
+    "payoff": "higher",
+    "truthfulness_deviation": "lower",
+    "regret": "lower",
+    "invalid_action": "lower",
+    "retry_count": "lower",
+    "latency_seconds": "lower",
+}
+
 
 def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
     outcomes = []
@@ -83,6 +96,8 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
         with (run_dir / "participant_data.csv").open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 for spec in AUCTION_OUTCOMES:
+                    if spec.name not in row:
+                        continue
                     value = 0.0 if spec.name == "invalid_action" and row["valid_action"] == "True" else None
                     if spec.name == "invalid_action" and value is None:
                         value = 1.0
@@ -102,6 +117,8 @@ def auction_outcomes(run_dirs: Iterable[Path]) -> list[Outcome]:
         with (run_dir / "system_data.csv").open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 for spec in AUCTION_SYSTEM_OUTCOMES:
+                    if spec.name not in row:
+                        continue
                     outcomes.append(
                         Outcome(
                             run_id=row["run_id"],
@@ -177,6 +194,7 @@ def build_scorecard(outcomes: list[Outcome]) -> dict[str, Any]:
         primary, diagnostics = _measure_scorecard(rows)
         result: dict[str, Any] = {
             "unit": rows[0].unit,
+            "preferred_direction": PREFERRED_DIRECTIONS.get(measure),
             "descriptive": _descriptive_summary(rows),
             "primary": {name: asdict(estimate) for name, estimate in primary.items()},
             "diagnostics": {name: asdict(estimate) for name, estimate in diagnostics.items()},

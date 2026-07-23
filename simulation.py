@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
+import re
 from datetime import UTC, datetime
+from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +16,12 @@ from sandbox.agents.cournot_best_reply import CournotBestReplyAgent
 from sandbox.agents.cournot_openai_compatible import CournotOpenAICompatibleAgent
 from sandbox.agents.human_cli import HumanCliAgent
 from sandbox.agents.openai_compatible import OpenAICompatibleAgent, OpenAICompatibleConfig
+from sandbox.agents.llm_auction import LLMAuctionAgent, LLMAuctionAgentConfig
+from sandbox.providers import build_provider
 from sandbox.games.auction.environment import AuctionConfig, AuctionEnvironment
 from sandbox.games.cournot.environment import CournotConfig, CournotEnvironment
 from sandbox.scorecard import analyze_runs
+from sandbox.prompts import DEFAULT_AGENT_PROMPT, DEFAULT_SYSTEM_PROMPT, validate_prompt_templates
 
 
 def load_local_env(path: Path = Path(".env")) -> None:
@@ -82,6 +88,29 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                 response_format=config.get("response_format"),
             )
         )
+    if agent_type == "AI" and policy == "llm_auction":
+        provider = build_provider(
+            config["provider"],
+            endpoint=config.get("endpoint"),
+            api_key_env=config.get("api_key_env"),
+            transport=config.get("transport"),
+        )
+        return LLMAuctionAgent(
+            provider,
+            LLMAuctionAgentConfig(
+                model=config["model"],
+                temperature=config.get("temperature", 0.0),
+                top_p=config.get("top_p", 1.0),
+                max_output_tokens=config.get("max_output_tokens", config.get("max_tokens", 800)),
+                timeout_seconds=config.get("timeout_seconds", 60.0),
+                memory_rounds=config.get("memory_rounds", 3),
+                max_retries=config.get("max_retries", 2),
+                reasoning_effort=config.get("reasoning_effort"),
+                provider_options=config.get("provider_options", {}),
+                system_prompt_template=config.get("system_prompt_template", DEFAULT_SYSTEM_PROMPT),
+                agent_prompt_template=config.get("agent_prompt_template", DEFAULT_AGENT_PROMPT),
+            ),
+        )
     if agent_type == "AI" and policy == "cournot_openai_compatible":
         return CournotOpenAICompatibleAgent(
             OpenAICompatibleConfig(
@@ -117,7 +146,16 @@ def run_experiment(config: dict[str, Any]) -> Path:
     run_dir = Path(config.get("output_dir", "runs")) / run_id
 
     output = OutputWriter(run_dir)
-    participants = participants_builder(config["participants"])
+    prompts = config.get("prompts", {})
+    system_template = prompts.get("system_template", DEFAULT_SYSTEM_PROMPT)
+    agent_template = prompts.get("agent_template", DEFAULT_AGENT_PROMPT)
+    validate_prompt_templates(system_template, agent_template)
+    participant_configs = copy.deepcopy(config["participants"])
+    for participant in participant_configs:
+        if participant.get("policy") == "llm_auction":
+            participant["system_prompt_template"] = system_template
+            participant["agent_prompt_template"] = agent_template
+    participants = participants_builder(participant_configs)
 
     if "auction" in config:
         game_type = "auction"
@@ -150,6 +188,7 @@ def run_experiment(config: dict[str, Any]) -> Path:
             "game_type": game_type,
             "created_at": datetime.now(UTC).isoformat(),
             "population_composition": composition,
+            "prompts": {"system_template": system_template, "agent_template": agent_template},
             game_type: environment.get_config_as_dict(),
         },
     )
@@ -162,6 +201,13 @@ def run_pipeline(
     analyze: bool = False,
     analysis_output: Path | None = None,
 ) -> tuple[Path, Path | None]:
+    if config.get("experiment_matrix"):
+        run_dirs, root = run_experiment_matrix(config)
+        if not analyze:
+            return root, None
+        output_dir = analysis_output or root / "analysis"
+        analyze_runs(run_dirs, output_dir)
+        return root, output_dir
     run_dir = run_experiment(config)
     should_analyze = analyze or analysis_output is not None or "cournot" in config
     if not should_analyze:
@@ -169,6 +215,85 @@ def run_pipeline(
     output_dir = analysis_output or run_dir / "analysis"
     analyze_runs([run_dir], output_dir)
     return run_dir, output_dir
+
+
+def run_experiment_matrix(config: dict[str, Any]) -> tuple[list[Path], Path]:
+    matrix = config["experiment_matrix"]
+    auction = config["auction"]
+    mechanisms = matrix.get("mechanisms") or [auction.get("mechanism", "first_price")]
+    descriptions = matrix.get("mechanism_description_treatments") or [
+        auction.get("mechanism_description_treatment", "concise")
+    ]
+    player_counts = matrix.get("player_counts") or [len(config["participants"])]
+    schedules = matrix.get("valuation_schedules") or [
+        {
+            "name": auction.get("valuation_schedule", "baseline"),
+            "player_ranges": auction.get("player_value_ranges", {}),
+        }
+    ]
+    trials = int(config.get("n", 1))
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    institution = re.sub(r"[^a-z0-9]+", "-", auction.get("institution", "baseline").lower()).strip("-")
+    root = Path(config.get("output_dir", "runs")) / f"{institution or 'institution'}-{timestamp}-matrix"
+    run_dirs: list[Path] = []
+    manifest = []
+    for mechanism, description, count, schedule in product(
+        mechanisms, descriptions, player_counts, schedules
+    ):
+        active = config["participants"][:count]
+        player_ids = [participant["player_id"] for participant in active]
+        base_ranges = schedule.get("player_ranges", {})
+        rotations = range(count) if schedule.get("rotate_across_positions") else range(1)
+        for rotation in rotations:
+            default_range = {
+                "minimum": auction["true_value_min"],
+                "maximum": auction["true_value_max"],
+            }
+            source = [base_ranges.get(player_id, default_range) for player_id in player_ids]
+            ranges = {
+                player_id: copy.deepcopy(source[(index - rotation) % count])
+                for index, player_id in enumerate(player_ids)
+            }
+            schedule_name = schedule["name"] + (
+                f"-rotation-{rotation + 1}" if schedule.get("rotate_across_positions") else ""
+            )
+            treatment = "__".join(
+                re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
+                for value in (mechanism, description, f"players-{count}", schedule_name)
+            )
+            for trial in range(trials):
+                expanded = copy.deepcopy(config)
+                expanded.pop("experiment_matrix", None)
+                expanded.pop("n", None)
+                expanded["participants"] = active
+                expanded["output_dir"] = str(root / "runs")
+                expanded["auction"].update(
+                    {
+                        "mechanism": mechanism,
+                        "mechanism_description_treatment": description,
+                        "mode": "ai_sealed_bid",
+                        "player_value_ranges": ranges,
+                        "valuation_schedule": schedule_name,
+                        "num_players": count,
+                        "seed": auction.get("seed", 7) + trial,
+                        "tie_break_seed": auction.get("tie_break_seed", auction.get("seed", 7)) + trial,
+                    }
+                )
+                if expanded["auction"].get("tie_break_priority"):
+                    expanded["auction"]["tie_break_priority"] = [
+                        value
+                        for value in expanded["auction"]["tie_break_priority"]
+                        if value in player_ids
+                    ]
+                expanded["run_id"] = f"{institution}-{timestamp}-{treatment}-trial-{trial + 1:04d}"
+                run_dir = run_experiment(expanded)
+                run_dirs.append(run_dir)
+                manifest.append({"run_id": expanded["run_id"], "treatment_id": treatment, "trial_index": trial})
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "matrix_manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return run_dirs, root
 
 
 def main():

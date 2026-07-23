@@ -1,0 +1,22 @@
+{
+  "game_name": "four-ai-first-price",
+  "output_dir": "runs",
+  "auction": {
+    "rounds": 10,
+    "starting_budget": 100,
+    "true_value_min": 1,
+    "true_value_max": 100,
+    "mechanism": "first_price",
+    "institution": "baseline",
+    "seed": 7,
+    "mode": "four_ai_sealed_bid",
+    "tie_breaking": "seeded_random",
+    "tie_break_seed": 7
+  },
+  "participants": [
+    {"player_id": "P1", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P2", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P3", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P4", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"}
+  ]
+}

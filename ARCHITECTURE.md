@@ -4,6 +4,10 @@ This repository runs repeated games with human, scripted, or
 OpenAI-compatible players. Auction and Cournot experiments share the same
 small set of data contracts, runner, output writer, and scorecard pipeline.
 
+It also provides additive AI sealed-bid modes. A FastAPI
+service schedules persistent batches, and a separately organized Dash frontend
+uses only the REST API. Legacy CLI modes remain the default.
+
 ## Design Principles
 
 - Keep each game self-contained in one environment module.
@@ -28,11 +32,16 @@ sandbox/
     openai_compatible.py             OpenAI-compatible auction player
     cournot_best_reply.py             Scripted Cournot player
     cournot_openai_compatible.py      OpenAI-compatible Cournot player
+    llm_auction.py                     Provider-neutral auction policy
+  providers/                           OpenAI, Claude, Gemini, and local Llama adapters
+  api/                                 Validation, persistent jobs, aggregates, REST API
   games/
     auction/environment.py           Auction rules and settlement
     cournot/environment.py           Cournot rules and settlement
 examples/                            Runnable JSON configurations
 tests/test_cournot.py                Cournot unit and pipeline tests
+frontend/                             Dash UI, API client, figures, and CSS
+webapp.py                             FastAPI/Dash composition entrypoint
 ```
 
 ## Execution Flow
@@ -51,6 +60,46 @@ flowchart LR
     O --> D["Run bundle"]
     D --> S["scorecard.py"]
 ```
+
+The web flow is `Dash -> /api/v1 -> SimulationJobManager ->
+AuctionEnvironment -> run bundles/results.json`. The manager runs separate
+simulations concurrently within configured limits, while each strict auction
+round snapshots all observations and requests up to four sealed bids at once
+behind a process-wide provider-call semaphore.
+
+Prompt templates are rendered by `sandbox/prompts.py` from one participant's
+`Observation`. The renderer has no reference to the environment's full state.
+Canonical provider requests return as decision metadata and flow through the
+existing environment logger and serializer.
+
+## Provider contracts
+
+`LLMProvider.generate()` accepts a provider-neutral request containing messages,
+model, JSON schema, and generation options, and returns normalized text, usage,
+request ID, and finish metadata. `LLMAuctionAgent` implements the existing
+`Agent` protocol on top of that provider contract. The legacy
+`OpenAICompatibleAgent` and its Cournot subclass are preserved.
+
+Profiles are loaded from `config/providers.json`, with process/`.env` values
+taking precedence for models and endpoints. API keys remain server-side.
+
+## Web API
+
+- `GET /api/v1/providers` returns sanitized provider profiles.
+- `GET /api/v1/prompts` returns prompt defaults and placeholder documentation.
+- `POST /api/v1/prompts/preview` validates and renders a preview.
+- `POST /api/v1/simulations` validates and queues a batch.
+- `GET /api/v1/simulations/{id}` reports progress and errors.
+- `GET /api/v1/simulations/{id}/results` returns authoritative rows and aggregates.
+
+Job and result state is persisted under `runs/web/<simulation-id>/`. A server
+restart marks unfinished in-process jobs failed; completed results remain
+readable without an external queue.
+
+An optional `experiment_matrix` is expanded into deterministic treatment cells
+before the existing job executor runs them. Each cell still creates a normal
+`AuctionEnvironment`; matrix code never settles auctions or reads hidden state.
+Run-level aggregates are the sampling unit for SD and Student-t intervals.
 
 `run_experiment()` performs five operations:
 

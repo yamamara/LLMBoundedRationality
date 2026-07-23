@@ -1,0 +1,20 @@
+{
+  "profiles": [
+    {
+      "profile_id": "lab-ollama",
+      "provider": "local_llama",
+      "model": "llama3.1",
+      "endpoint": "http://localhost:11434",
+      "transport": "ollama",
+      "defaults": {"num_ctx": 4096, "keep_alive": "5m"}
+    },
+    {
+      "profile_id": "openai",
+      "provider": "openai",
+      "model": "",
+      "endpoint": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "defaults": {}
+    }
+  ]
+}
