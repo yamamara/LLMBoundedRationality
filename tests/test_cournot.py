@@ -127,6 +127,27 @@ class CournotTests(unittest.TestCase):
         self.assertNotIn("firm_results", best.observe("P1").public_state["completed_rounds"][0])
         self.assertIn("firm_results", full.observe("P1").public_state["completed_rounds"][0])
 
+    def test_observation_exposes_all_completed_rounds(self):
+        best = CournotEnvironment(
+            config("BEST", rounds=4, revision_probability=1),
+            participants([FixedAgent(10 + index) for index in range(4)]),
+        )
+        full = CournotEnvironment(
+            config("FULL", rounds=4, revision_probability=1),
+            participants([FixedAgent(10 + index) for index in range(4)]),
+        )
+        for _ in range(3):
+            best.run_round()
+            full.run_round()
+
+        best_history = best.observe("P1").public_state["completed_rounds"]
+        full_history = full.observe("P1").public_state["completed_rounds"]
+
+        self.assertEqual([row["round"] for row in best_history], [0, 1, 2])
+        self.assertEqual([row["round"] for row in full_history], [0, 1, 2])
+        self.assertTrue(all("firm_results" not in row for row in best_history))
+        self.assertTrue(all("firm_results" in row for row in full_history))
+
     def test_inertia_holds_quantity_without_calling_agent(self):
         agents = [FixedAgent(10 + index) for index in range(4)]
         environment = CournotEnvironment(

@@ -44,7 +44,7 @@ class LLMCournotAgentConfig:
     top_p: float | None = 1.0
     max_output_tokens: int = 800
     timeout_seconds: float = 60.0
-    memory_rounds: int | None = 1
+    memory_rounds: int | None = None
     max_retries: int = 2
     reasoning_effort: str | None = None
     provider_options: dict[str, Any] = field(default_factory=dict)

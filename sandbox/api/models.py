@@ -20,7 +20,12 @@ Mechanism = Literal["first_price", "second_price"]
 DescriptionTreatment = Literal["name_only", "concise", "full"]
 CournotTreatment = Literal["BEST", "FULL"]
 CournotPolicy = Literal[
-    "cournot_best_reply", "cournot_llm", "cournot_openai_compatible", "web_human"
+    "cournot_best_reply",
+    "cournot_random_quantity",
+    "cournot_previous_average",
+    "cournot_llm",
+    "cournot_openai_compatible",
+    "web_human",
 ]
 
 
@@ -186,7 +191,7 @@ class CournotAgentSpec(BaseModel):
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int = Field(default=800, ge=32, le=32768)
     timeout_seconds: float = Field(default=60.0, ge=1.0, le=600.0)
-    memory_rounds: int | None = Field(default=1, ge=0, le=1000)
+    memory_rounds: int | None = Field(default=None, ge=0, le=1000)
     max_retries: int = Field(default=2, ge=1, le=10)
     reasoning_effort: str | None = None
     provider_options: dict[str, Any] = Field(default_factory=dict)

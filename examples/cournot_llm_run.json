@@ -15,9 +15,9 @@
     "institution": "baseline"
   },
   "participants": [
-    {"player_id": "L1", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1", "memory_rounds": 1},
-    {"player_id": "L2", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1", "memory_rounds": 1},
-    {"player_id": "L3", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1", "memory_rounds": 1},
-    {"player_id": "L4", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1", "memory_rounds": 1}
+    {"player_id": "L1", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L2", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L3", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L4", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null}
   ]
 }

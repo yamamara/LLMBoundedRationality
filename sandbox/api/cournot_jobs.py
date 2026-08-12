@@ -181,15 +181,17 @@ class CournotJobManager:
     ) -> dict[str, Any]:
         cournot = request.cournot
         participants = []
-        for agent in request.agents:
+        for agent_index, agent in enumerate(request.agents):
             participant = {
                 "player_id": agent.player_id,
                 "agent_type": "human" if agent.policy == "web_human" else "AI",
                 "role": "producer",
                 "policy": agent.policy,
             }
-            if agent.policy == "cournot_best_reply":
+            if agent.policy in {"cournot_best_reply", "cournot_previous_average"}:
                 participant["initial_quantity"] = agent.initial_quantity
+            elif agent.policy == "cournot_random_quantity":
+                participant["random_seed"] = cournot.seed + agent_index
             elif agent.policy == "cournot_llm":
                 if agent.profile_id not in self.profiles:
                     raise ValueError(

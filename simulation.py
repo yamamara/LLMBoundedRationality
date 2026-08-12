@@ -13,6 +13,8 @@ from typing import Any, Callable
 from sandbox.models import Agent, Participant
 from sandbox.serialization import OutputWriter
 from sandbox.agents.cournot_best_reply import CournotBestReplyAgent
+from sandbox.agents.cournot_previous_average import CournotPreviousAverageAgent
+from sandbox.agents.cournot_random_quantity import CournotRandomQuantityAgent
 from sandbox.agents.cournot_openai_compatible import CournotOpenAICompatibleAgent
 from sandbox.agents.human_cli import HumanCliAgent
 from sandbox.agents.web_human import WebHumanAgent
@@ -131,7 +133,7 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                 temperature=config.get("temperature", 0.0),
                 max_tokens=config.get("max_tokens", 800),
                 timeout_seconds=config.get("timeout_seconds", 60.0),
-                memory_rounds=config.get("memory_rounds", 1),
+                memory_rounds=config.get("memory_rounds"),
                 max_retries=config.get("max_retries", 2),
                 reasoning_effort=config.get("reasoning_effort", "none"),
                 response_format=config.get("response_format"),
@@ -160,7 +162,7 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                     "max_output_tokens", config.get("max_tokens", 800)
                 ),
                 timeout_seconds=config.get("timeout_seconds", 60.0),
-                memory_rounds=config.get("memory_rounds", 1),
+                memory_rounds=config.get("memory_rounds"),
                 max_retries=config.get("max_retries", 2),
                 reasoning_effort=config.get("reasoning_effort"),
                 provider_options=config.get("provider_options", {}),
@@ -174,6 +176,10 @@ def agent_builder(config: dict[str, Any]) -> Agent:
         )
     if agent_type == "AI" and policy == "cournot_best_reply":
         return CournotBestReplyAgent(config.get("initial_quantity", 20.0))
+    if agent_type == "AI" and policy == "cournot_random_quantity":
+        return CournotRandomQuantityAgent(config.get("random_seed"))
+    if agent_type == "AI" and policy == "cournot_previous_average":
+        return CournotPreviousAverageAgent(config.get("initial_quantity", 20.0))
 
     raise ValueError(f"Unsupported agent configuration: agent_type={agent_type!r}, policy={policy!r}")
 

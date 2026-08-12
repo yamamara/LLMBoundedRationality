@@ -15,6 +15,7 @@ DEFAULT_COURNOT_PLAYERS = 4
 MAX_COURNOT_PLAYERS = 8
 COURNOT_AGENT_FIELDS = (
     "type",
+    "policy",
     "initial",
     "profile",
     "model",
@@ -70,11 +71,20 @@ def _agent_card(index: int):
                         [
                             "Policy",
                             dcc.Dropdown(
+                                id=f"{prefix}-policy",
                                 options=[
                                     {
                                         "label": "Myopic best reply",
                                         "value": "cournot_best_reply",
-                                    }
+                                    },
+                                    {
+                                        "label": "Random quantity (1-100)",
+                                        "value": "cournot_random_quantity",
+                                    },
+                                    {
+                                        "label": "Previous average quantity",
+                                        "value": "cournot_previous_average",
+                                    },
                                 ],
                                 value="cournot_best_reply",
                                 clearable=False,
@@ -120,7 +130,13 @@ def _agent_card(index: int):
                         className="control-field",
                     ),
                     _number("Temperature", f"{prefix}-temperature", 0.0, 0, 2, 0.1),
-                    _number("Memory rounds", f"{prefix}-memory", 1, 0, 1000),
+                    _number(
+                        "Memory rounds (blank = all)",
+                        f"{prefix}-memory",
+                        None,
+                        0,
+                        1000,
+                    ),
                     _number("Retries", f"{prefix}-retries", 2, 1, 10),
                 ],
                 id=f"{prefix}-model-settings",
@@ -609,6 +625,7 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                     ]
                     (
                         kind,
+                        script_policy,
                         initial,
                         profile_id,
                         model,
@@ -619,7 +636,7 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                         agent_prompt_override,
                     ) = values
                     policy = {
-                        "script": "cournot_best_reply",
+                        "script": script_policy,
                         "model": "cournot_llm",
                         "human": "web_human",
                     }[kind]

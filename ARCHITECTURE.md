@@ -28,7 +28,8 @@ sandbox/
   visualization.py                  Cournot player score summary and SVG chart
   playback.py                       Cournot event timeline and interactive HTML
   cournot_prompts.py                Cournot-only templates and placeholders
-  power.py                          Shared dashboard-job sleep inhibitor
+  cournot_sweep.py                  Resumable local Llama matrix and aggregation
+  power.py                          Shared long-running-job sleep inhibitor
   agents/
     human_cli.py                     Human auction player
     openai_compatible.py             OpenAI-compatible auction player
@@ -45,6 +46,7 @@ sandbox/
     auction/environment.py           Auction rules and settlement
     cournot/environment.py           Cournot rules and settlement
 examples/                            Runnable JSON configurations
+scripts/run_cournot_sweep.py         Local Llama sweep CLI
 tests/test_cournot.py                Cournot unit and pipeline tests
 frontend/                             Dash UI, API client, figures, and CSS
   cournot_results.py                  Cournot form, job polling, graph controls, and playback
@@ -174,13 +176,17 @@ periods. Four firms remains the paper-faithful default. It
 implements the paper's linear demand, unit marginal cost, 0.01 quantity grid,
 2/3 revision probability, and BEST/FULL information treatments.
 
-BEST exposes market rules and aggregate opponent output. FULL additionally
-exposes each firm's previous quantity and profit. The environment always keeps
-the complete state internally for settlement and research output.
+BEST exposes market rules and aggregate opponent output for every completed
+round. FULL additionally exposes each firm's quantity and profit in every
+completed round. Model agents receive the full visible history by default and
+can configure a numeric `memory_rounds` cap. The environment always keeps the
+complete state internally for settlement and research output.
 
-Cournot currently has four policies:
+Cournot currently has six policies:
 
 - `cournot_best_reply`: deterministic local policy for tests and baseline runs.
+- `cournot_random_quantity`: seeded random legal quantity from 1 through 100.
+- `cournot_previous_average`: repeats the preceding round's average firm quantity.
 - `cournot_llm`: provider-profile-backed model policy supporting the same local,
   OpenAI, Anthropic, and Gemini adapters as Auction.
 - `cournot_openai_compatible`: model policy using the existing HTTP adapter and
@@ -224,6 +230,11 @@ plus a self-contained `cournot_playback.html` event timeline.
 
 `scorecard.py` reads these files, selects auction or Cournot outcome columns
 from `summary.json`, and applies the same cross-run comparison code.
+
+The local Cournot sweep calls the normal single-run writer for every treatment
+cell, checkpoints a manifest after each attempt, and aggregates independent
+run-level metrics under the sweep's `analysis/` directory. It intentionally
+does not generate hundreds of per-run playback and scorecard artifacts.
 
 ## Adding Another Game
 

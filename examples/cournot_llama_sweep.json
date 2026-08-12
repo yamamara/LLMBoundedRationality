@@ -1,0 +1,41 @@
+{
+  "name": "llama31-8b-cournot-balanced",
+  "output_dir": "runs/cournot-sweeps",
+  "provider": {
+    "provider": "local_llama",
+    "transport": "ollama",
+    "endpoint": "http://localhost:11434",
+    "model": "llama3.1:8b",
+    "max_output_tokens": 300,
+    "timeout_seconds": 120.0,
+    "memory_rounds": null,
+    "max_retries": 2,
+    "top_p": 1.0,
+    "provider_options": {
+      "num_ctx": 16384,
+      "keep_alive": "30m"
+    }
+  },
+  "experiment": {
+    "total_players": 4,
+    "model_counts": [1, 2, 3, 4],
+    "temperatures": [0.0, 0.3, 0.7, 1.0],
+    "treatments": ["BEST", "FULL"],
+    "trials": 5,
+    "rounds": 40,
+    "revision_probability": 0.6666666666666666,
+    "base_seed": 7,
+    "quantity_min": 0.0,
+    "quantity_max": 100.0,
+    "quantity_step": 0.01,
+    "demand_intercept": 100.0,
+    "marginal_cost": 1.0,
+    "fixed_payment": 150.0,
+    "initial_quantities": [10.0, 20.0, 30.0, 40.0],
+    "steady_state_window": 10,
+    "nash_tolerance_fraction": 0.05
+  },
+  "execution": {
+    "workers": 2
+  }
+}

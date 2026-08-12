@@ -34,6 +34,19 @@ class SystemSleepInhibitorTests(unittest.TestCase):
             pass
         popen.assert_not_called()
 
+    @patch("sandbox.power._set_windows_execution_state", return_value=True)
+    @patch("sandbox.power.platform.system", return_value="Windows")
+    def test_windows_jobs_set_and_restore_execution_state(self, _system, set_state):
+        inhibitor = SystemSleepInhibitor()
+
+        with inhibitor.hold():
+            with inhibitor.hold():
+                pass
+
+        self.assertEqual(set_state.call_count, 2)
+        self.assertEqual(set_state.call_args_list[0].args[0], 0x80000001)
+        self.assertEqual(set_state.call_args_list[1].args[0], 0x80000000)
+
 
 if __name__ == "__main__":
     unittest.main()

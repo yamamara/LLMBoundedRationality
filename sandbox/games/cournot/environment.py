@@ -248,20 +248,25 @@ class CournotEnvironment(Environment):
         self.log({"event_type": "settlement", **round_summary, "firm_results": firm_results})
 
     def visible_history(self, player_id: str) -> list[dict[str, Any]]:
-        if not self.history:
-            return []
-        result = self.history[-1]
-        own = next(item for item in result["firm_results"] if item["player_id"] == player_id)
-        visible: dict[str, Any] = {
-            "round": result["round"],
-            "opponents_total_quantity": result["total_quantity"] - own["quantity"],
-            "price": result["price"],
-            "own_quantity": own["quantity"],
-            "own_profit": own["profit"],
-        }
-        if self.config.treatment == "FULL":
-            visible["firm_results"] = result["firm_results"]
-        return [visible]
+        visible_history = []
+        for result in self.history:
+            own = next(
+                item
+                for item in result["firm_results"]
+                if item["player_id"] == player_id
+            )
+            visible: dict[str, Any] = {
+                "round": result["round"],
+                "opponents_total_quantity": result["total_quantity"]
+                - own["quantity"],
+                "price": result["price"],
+                "own_quantity": own["quantity"],
+                "own_profit": own["profit"],
+            }
+            if self.config.treatment == "FULL":
+                visible["firm_results"] = result["firm_results"]
+            visible_history.append(visible)
+        return visible_history
 
     def best_reply(self, opponents_total: float) -> float:
         raw = (self.config.demand_intercept - self.config.marginal_cost - opponents_total) / 2

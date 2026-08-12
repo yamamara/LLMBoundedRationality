@@ -3,15 +3,15 @@
     {
       "profile_id": "local-ollama",
       "provider": "local_llama",
-      "model": "llama3.1",
+      "model": "llama3.1:8b",
       "endpoint": "http://localhost:11434",
       "transport": "ollama",
-      "defaults": {"num_ctx": 4096, "keep_alive": "5m"}
+      "defaults": {"num_ctx": 16384, "keep_alive": "5m"}
     },
     {
       "profile_id": "local-openai-compatible",
       "provider": "local_llama",
-      "model": "llama3.1",
+      "model": "llama3.1:8b",
       "endpoint": "http://localhost:11434/v1",
       "transport": "openai_compatible",
       "defaults": {}

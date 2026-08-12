@@ -48,10 +48,10 @@ DEFAULT_PROFILES = [
     ProviderProfile(
         "local-ollama",
         "local_llama",
-        "llama3.1",
+        "llama3.1:8b",
         "http://localhost:11434",
         transport="ollama",
-        defaults={"temperature": 0.0, "num_ctx": 4096, "keep_alive": "5m"},
+        defaults={"temperature": 0.0, "num_ctx": 16384, "keep_alive": "5m"},
     ),
     ProviderProfile("openai", "openai", "", "https://api.openai.com/v1", "OPENAI_API_KEY"),
     ProviderProfile("anthropic", "anthropic", "", "https://api.anthropic.com", "ANTHROPIC_API_KEY"),
