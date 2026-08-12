@@ -18,6 +18,7 @@ from sandbox.configuration import ProviderProfile, load_provider_profiles
 from sandbox.experiments import TreatmentCell, expand_treatment_cells
 from sandbox.games.auction.environment import AuctionConfig, AuctionEnvironment
 from sandbox.models import Participant
+from sandbox.power import prevent_system_sleep
 from sandbox.providers import build_provider
 from sandbox.serialization import OutputWriter
 from sandbox.statistics import PRIMARY_METRICS, trial_summary
@@ -160,6 +161,10 @@ class SimulationJobManager:
 
     def _run_job(self, simulation_id: str, request: SimulationRequest) -> None:
         self._update(simulation_id, status="running")
+        with prevent_system_sleep():
+            self._run_job_awake(simulation_id, request)
+
+    def _run_job_awake(self, simulation_id: str, request: SimulationRequest) -> None:
         decision_rows: list[dict[str, Any]] = []
         round_rows: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []

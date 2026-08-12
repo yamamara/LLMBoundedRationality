@@ -53,9 +53,19 @@ python3 -m uvicorn webapp:app --reload
 ```
 
 Open `http://127.0.0.1:8000`, switch the experiment control to `Cournot`,
-configure hyperparameters and editable prompts, then assign each player as a
-human, model, or script. Browser-human turns appear on the page while the job
-is running. The graph and playback appear only after that job completes.
+configure hyperparameters, then assign each player as a human, model, or script.
+The Agent Assignment tab can add or remove firms from the supported two-to-eight
+player range; four remains the paper's default. The separate Agent Prompts tab
+shows prefilled system and decision prompt editors for every active player, so
+model players can use different instructions without hidden override controls.
+Each model player also has the same provider-profile dropdown as Auction. It
+supports configured local Ollama/OpenAI-compatible, OpenAI, Anthropic/Claude,
+and Gemini profiles from `config/providers.json`; unavailable profiles remain
+visible but disabled until their model and API-key environment variables exist.
+Browser-human turns appear on the page while the job is running. Dashboard jobs
+use macOS `caffeinate` to keep the computer awake until execution finishes. The
+round progress bar advances after each settlement, and the graph and playback
+appear only after that job completes.
 
 ### Contributors
 

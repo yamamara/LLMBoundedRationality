@@ -9,7 +9,7 @@ from sandbox.models import Observation
 
 
 DEFAULT_COURNOT_SYSTEM_PROMPT = (
-    "You are firm {{ player_id }} in a four-firm repeated Cournot market using the "
+    "You are firm {{ player_id }} in a {{ num_players }}-firm repeated Cournot market using the "
     "{{ treatment }} information treatment. Maximize your own profit and follow the "
     "response rules exactly."
 )
@@ -25,6 +25,7 @@ DEFAULT_COURNOT_AGENT_PROMPT = (
 
 COURNOT_PLACEHOLDER_DESCRIPTIONS = {
     "player_id": "Current firm identifier.",
+    "num_players": "Number of firms in the market.",
     "round_number": "Human-facing, one-based round number.",
     "total_rounds": "Total periods in the run.",
     "treatment": "BEST or FULL information treatment.",
@@ -99,6 +100,7 @@ def render_cournot_prompts(
     limits = observation.legal_actions.limits
     context = {
         "player_id": observation.player_id,
+        "num_players": public.get("market", {}).get("firms"),
         "round_number": observation.round + 1,
         "total_rounds": public["rounds_total"],
         "treatment": public["treatment"],

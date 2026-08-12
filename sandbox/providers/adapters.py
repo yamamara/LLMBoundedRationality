@@ -110,8 +110,8 @@ class AnthropicProvider:
             },
             "timeout": request.options.timeout_seconds,
         }
-        if request.options.top_p is not None:
-            kwargs["top_p"] = request.options.top_p
+        # Anthropic models reject requests that specify both sampling controls.
+        # Temperature is the sampling control exposed by this application's UI.
         kwargs.update(request.options.provider_options)
         response = self._get_client().messages.create(**kwargs)
         text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")

@@ -8,7 +8,7 @@ import re
 from datetime import UTC, datetime
 from itertools import product
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from sandbox.models import Agent, Participant
 from sandbox.serialization import OutputWriter
@@ -18,6 +18,7 @@ from sandbox.agents.human_cli import HumanCliAgent
 from sandbox.agents.web_human import WebHumanAgent
 from sandbox.agents.openai_compatible import OpenAICompatibleAgent, OpenAICompatibleConfig
 from sandbox.agents.llm_auction import LLMAuctionAgent, LLMAuctionAgentConfig
+from sandbox.agents.llm_cournot import LLMCournotAgent, LLMCournotAgentConfig
 from sandbox.providers import build_provider
 from sandbox.games.auction.environment import AuctionConfig, AuctionEnvironment
 from sandbox.games.cournot.environment import CournotConfig, CournotEnvironment
@@ -142,13 +143,45 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                 "agent_prompt_template", DEFAULT_COURNOT_AGENT_PROMPT
             ),
         )
+    if agent_type == "AI" and policy == "cournot_llm":
+        provider = build_provider(
+            config["provider"],
+            endpoint=config.get("endpoint"),
+            api_key_env=config.get("api_key_env"),
+            transport=config.get("transport"),
+        )
+        return LLMCournotAgent(
+            provider,
+            LLMCournotAgentConfig(
+                model=config["model"],
+                temperature=config.get("temperature", 0.0),
+                top_p=config.get("top_p", 1.0),
+                max_output_tokens=config.get(
+                    "max_output_tokens", config.get("max_tokens", 800)
+                ),
+                timeout_seconds=config.get("timeout_seconds", 60.0),
+                memory_rounds=config.get("memory_rounds", 1),
+                max_retries=config.get("max_retries", 2),
+                reasoning_effort=config.get("reasoning_effort"),
+                provider_options=config.get("provider_options", {}),
+                system_prompt_template=config.get(
+                    "system_prompt_template", DEFAULT_COURNOT_SYSTEM_PROMPT
+                ),
+                agent_prompt_template=config.get(
+                    "agent_prompt_template", DEFAULT_COURNOT_AGENT_PROMPT
+                ),
+            ),
+        )
     if agent_type == "AI" and policy == "cournot_best_reply":
         return CournotBestReplyAgent(config.get("initial_quantity", 20.0))
 
     raise ValueError(f"Unsupported agent configuration: agent_type={agent_type!r}, policy={policy!r}")
 
 
-def run_experiment(config: dict[str, Any]) -> Path:
+def run_experiment(
+    config: dict[str, Any],
+    progress_callback: Callable[[int], None] | None = None,
+) -> Path:
     load_local_env()
 
     if config.get("run_id"):
@@ -184,7 +217,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
         environment = AuctionEnvironment(AuctionConfig(**config["auction"]), participants, output)
     elif "cournot" in config:
         game_type = "cournot"
-        environment = CournotEnvironment(CournotConfig(**config["cournot"]), participants, output)
+        environment = CournotEnvironment(
+            CournotConfig(**config["cournot"]),
+            participants,
+            output,
+            progress_callback,
+        )
     else:
         raise ValueError("Config must contain either auction or cournot settings")
     composition = population_composition(participants)
@@ -222,6 +260,7 @@ def run_pipeline(
     config: dict[str, Any],
     analyze: bool = False,
     analysis_output: Path | None = None,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> tuple[Path, Path | None]:
     if config.get("experiment_matrix"):
         run_dirs, root = run_experiment_matrix(config)
@@ -230,7 +269,7 @@ def run_pipeline(
         output_dir = analysis_output or root / "analysis"
         analyze_runs(run_dirs, output_dir)
         return root, output_dir
-    run_dir = run_experiment(config)
+    run_dir = run_experiment(config, progress_callback)
     should_analyze = analyze or analysis_output is not None or "cournot" in config
     if not should_analyze:
         return run_dir, None

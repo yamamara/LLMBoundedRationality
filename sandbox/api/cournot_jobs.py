@@ -12,6 +12,8 @@ from typing import Any
 
 from sandbox.api.models import CournotSimulationRequest
 from sandbox.agents.web_human import HUMAN_DECISION_BROKER
+from sandbox.configuration import ProviderProfile, load_provider_profiles
+from sandbox.power import prevent_system_sleep
 
 
 COURNOT_TERMINAL_STATUSES = {"completed", "failed"}
@@ -38,7 +40,12 @@ class CournotJobState:
 class CournotJobManager:
     """Runs frontend Cournot jobs without coupling them to auction batches."""
 
-    def __init__(self, output_root: Path | None = None, max_jobs: int = 2):
+    def __init__(
+        self,
+        output_root: Path | None = None,
+        max_jobs: int = 2,
+        profiles: dict[str, ProviderProfile] | None = None,
+    ):
         self.output_root = output_root or Path(
             os.environ.get("COURNOT_WEB_OUTPUT_DIR", "runs/web/cournot")
         )
@@ -47,6 +54,7 @@ class CournotJobManager:
             max_workers=max_jobs, thread_name_prefix="cournot-job"
         )
         self.lock = threading.RLock()
+        self.profiles = profiles or load_provider_profiles()
         self.jobs: dict[str, CournotJobState] = {}
         self.results: dict[str, dict[str, Any]] = {}
 
@@ -109,11 +117,28 @@ class CournotJobManager:
 
     def _run(self, simulation_id: str, request: CournotSimulationRequest) -> None:
         self._update(simulation_id, status="running")
+        with prevent_system_sleep():
+            self._run_awake(simulation_id, request)
+
+    def _run_awake(
+        self, simulation_id: str, request: CournotSimulationRequest
+    ) -> None:
         try:
             from simulation import run_pipeline
 
             config = self._pipeline_config(simulation_id, request)
-            run_dir, analysis_dir = run_pipeline(config, analyze=True)
+
+            def report_progress(completed_rounds: int) -> None:
+                self._update(
+                    simulation_id,
+                    completed_rounds=min(completed_rounds, request.cournot.rounds),
+                )
+
+            run_dir, analysis_dir = run_pipeline(
+                config,
+                analyze=True,
+                progress_callback=report_progress,
+            )
             if analysis_dir is None:
                 raise RuntimeError("Cournot analysis did not produce an output directory")
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
@@ -123,6 +148,7 @@ class CournotJobManager:
                 "run_id": summary["run_id"],
                 "game_name": summary["game_name"],
                 "treatment": summary["cournot"]["treatment"],
+                "player_count": len(request.agents),
                 "graph_url": f"/api/v1/cournot-simulations/{simulation_id}/graph",
                 "graph_two_sd_url": f"/api/v1/cournot-simulations/{simulation_id}/graph",
                 "graph_ci95_url": f"/api/v1/cournot-simulations/{simulation_id}/graph-ci95",
@@ -164,6 +190,48 @@ class CournotJobManager:
             }
             if agent.policy == "cournot_best_reply":
                 participant["initial_quantity"] = agent.initial_quantity
+            elif agent.policy == "cournot_llm":
+                if agent.profile_id not in self.profiles:
+                    raise ValueError(
+                        f"Unknown provider profile: {agent.profile_id}"
+                    )
+                profile = self.profiles[agent.profile_id]
+                model = agent.model or profile.model
+                if not model:
+                    raise ValueError(
+                        f"No model configured for provider profile {profile.profile_id}"
+                    )
+                if not profile.configured:
+                    raise ValueError(
+                        f"Provider profile {profile.profile_id} is not configured"
+                    )
+                options = {**profile.defaults, **agent.provider_options}
+                for common_key in ("temperature", "top_p"):
+                    options.pop(common_key, None)
+                participant.update(
+                    {
+                        "provider": profile.provider,
+                        "endpoint": profile.endpoint,
+                        "api_key_env": profile.api_key_env,
+                        "transport": profile.transport,
+                        "model": model,
+                        "temperature": agent.temperature,
+                        "max_output_tokens": agent.max_tokens,
+                        "timeout_seconds": agent.timeout_seconds,
+                        "memory_rounds": agent.memory_rounds,
+                        "max_retries": agent.max_retries,
+                        "reasoning_effort": agent.reasoning_effort,
+                        "provider_options": options,
+                        "system_prompt_template": (
+                            agent.system_prompt_template
+                            or request.prompts.system_template
+                        ),
+                        "agent_prompt_template": (
+                            agent.agent_prompt_template
+                            or request.prompts.agent_template
+                        ),
+                    }
+                )
             elif agent.policy == "cournot_openai_compatible":
                 participant.update(
                     {
@@ -175,8 +243,14 @@ class CournotJobManager:
                         "timeout_seconds": agent.timeout_seconds,
                         "memory_rounds": agent.memory_rounds,
                         "max_retries": agent.max_retries,
-                        "system_prompt_template": request.prompts.system_template,
-                        "agent_prompt_template": request.prompts.agent_template,
+                        "system_prompt_template": (
+                            agent.system_prompt_template
+                            or request.prompts.system_template
+                        ),
+                        "agent_prompt_template": (
+                            agent.agent_prompt_template
+                            or request.prompts.agent_template
+                        ),
                     }
                 )
             else:

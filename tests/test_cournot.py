@@ -59,6 +59,46 @@ def participants(agents):
 
 
 class CournotTests(unittest.TestCase):
+    def test_progress_callback_runs_after_each_settled_round(self):
+        progress = []
+        environment = CournotEnvironment(
+            config(rounds=3),
+            participants([FixedAgent(20) for _ in range(4)]),
+            progress_callback=progress.append,
+        )
+
+        environment.run()
+
+        self.assertEqual(progress, [1, 2, 3])
+
+    def test_variable_player_counts_update_market_and_nash_benchmark(self):
+        for player_count in (2, 6, 8):
+            with self.subTest(player_count=player_count):
+                environment = CournotEnvironment(
+                    config(),
+                    participants([FixedAgent(10) for _ in range(player_count)]),
+                )
+
+                self.assertEqual(
+                    environment.observe("P1").public_state["market"]["firms"],
+                    player_count,
+                )
+                rows = environment.run()
+                expected_nash_total = player_count * 99 / (player_count + 1)
+                self.assertAlmostEqual(
+                    rows["rounds"][0]["distance_to_nash"],
+                    abs(player_count * 10 - expected_nash_total),
+                )
+
+    def test_cournot_rejects_player_counts_outside_supported_range(self):
+        for player_count in (1, 9):
+            with self.subTest(player_count=player_count):
+                with self.assertRaisesRegex(ValueError, "between two and eight"):
+                    CournotEnvironment(
+                        config(),
+                        participants([FixedAgent(10) for _ in range(player_count)]),
+                    )
+
     def test_nash_profile_has_expected_price_and_profit(self):
         environment = CournotEnvironment(
             config(),

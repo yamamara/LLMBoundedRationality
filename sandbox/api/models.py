@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sandbox.prompts import (
     DEFAULT_AGENT_PROMPT,
@@ -20,7 +20,7 @@ Mechanism = Literal["first_price", "second_price"]
 DescriptionTreatment = Literal["name_only", "concise", "full"]
 CournotTreatment = Literal["BEST", "FULL"]
 CournotPolicy = Literal[
-    "cournot_best_reply", "cournot_openai_compatible", "web_human"
+    "cournot_best_reply", "cournot_llm", "cournot_openai_compatible", "web_human"
 ]
 
 
@@ -179,6 +179,7 @@ class CournotAgentSpec(BaseModel):
     player_id: str = Field(min_length=1, max_length=64)
     policy: CournotPolicy = "cournot_best_reply"
     initial_quantity: float = Field(default=20.0, ge=0.0, le=100.0)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=64)
     base_url: str | None = None
     model: str | None = None
     api_key_env: str | None = None
@@ -187,6 +188,17 @@ class CournotAgentSpec(BaseModel):
     timeout_seconds: float = Field(default=60.0, ge=1.0, le=600.0)
     memory_rounds: int | None = Field(default=1, ge=0, le=1000)
     max_retries: int = Field(default=2, ge=1, le=10)
+    reasoning_effort: str | None = None
+    provider_options: dict[str, Any] = Field(default_factory=dict)
+    system_prompt_template: str | None = Field(default=None, max_length=50_000)
+    agent_prompt_template: str | None = Field(default=None, max_length=50_000)
+
+    @field_validator("system_prompt_template", "agent_prompt_template", mode="before")
+    @classmethod
+    def normalize_prompt_override(cls, value):
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def validate_policy_configuration(self):
@@ -194,6 +206,13 @@ class CournotAgentSpec(BaseModel):
             self.base_url and self.model
         ):
             raise ValueError("OpenAI-compatible Cournot agents require base_url and model")
+        if self.policy == "cournot_llm" and not self.profile_id:
+            raise ValueError("Provider-backed Cournot agents require profile_id")
+        if self.system_prompt_template is not None or self.agent_prompt_template is not None:
+            validate_cournot_prompt_templates(
+                self.system_prompt_template or DEFAULT_COURNOT_SYSTEM_PROMPT,
+                self.agent_prompt_template or DEFAULT_COURNOT_AGENT_PROMPT,
+            )
         return self
 
 
@@ -229,13 +248,11 @@ class CournotSimulationRequest(BaseModel):
 
     name: str = Field(default="huck-cournot", min_length=1, max_length=100)
     cournot: CournotSpec = Field(default_factory=CournotSpec)
-    agents: list[CournotAgentSpec]
+    agents: list[CournotAgentSpec] = Field(min_length=2, max_length=8)
     prompts: CournotPromptSpec = Field(default_factory=CournotPromptSpec)
 
     @model_validator(mode="after")
     def validate_agents(self):
-        if len(self.agents) != 4:
-            raise ValueError("Exactly four Cournot agents are required")
         player_ids = [agent.player_id for agent in self.agents]
         if len(set(player_ids)) != len(player_ids):
             raise ValueError("Cournot player_id values must be unique")

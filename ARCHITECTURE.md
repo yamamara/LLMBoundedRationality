@@ -28,11 +28,13 @@ sandbox/
   visualization.py                  Cournot player score summary and SVG chart
   playback.py                       Cournot event timeline and interactive HTML
   cournot_prompts.py                Cournot-only templates and placeholders
+  power.py                          Shared dashboard-job sleep inhibitor
   agents/
     human_cli.py                     Human auction player
     openai_compatible.py             OpenAI-compatible auction player
     cournot_best_reply.py             Scripted Cournot player
     cournot_openai_compatible.py      OpenAI-compatible Cournot player
+    llm_cournot.py                     Provider-neutral Cournot policy
     web_human.py                      Browser-human adapter and decision broker
     llm_auction.py                     Provider-neutral auction policy
   providers/                           OpenAI, Claude, Gemini, and local Llama adapters
@@ -75,10 +77,21 @@ The Cournot manager reuses the normal runner and automatic analysis pipeline.
 It returns graph and playback URLs scoped to its own simulation ID, so the UI
 cannot accidentally display artifacts from another run.
 
+Both dashboard job managers hold the shared sleep inhibitor while work is
+active. On macOS it reference-counts a `caffeinate` process, so overlapping jobs
+keep the machine awake until the last one finishes; other platforms are no-ops.
+
 Cournot agent assignment is per player. Script and model players execute
 normally through `Agent.decide()`. A browser-human agent publishes its current
 `Observation` through `HumanDecisionBroker`, waits without terminal input, and
 resumes when the job-specific API accepts a legal quantity.
+
+Cournot model specs may carry their own system and decision prompt templates.
+The job manager resolves each blank override to the experiment-wide template
+before building participants, keeping prompt selection outside the environment.
+The dashboard exposes these templates in a dedicated Agent Prompts tab with one
+prefilled editor pair per active player; prompt visibility is independent of the
+participant type selector.
 
 Prompt templates are rendered by `sandbox/prompts.py` from one participant's
 `Observation`. The renderer has no reference to the environment's full state.
@@ -89,8 +102,8 @@ existing environment logger and serializer.
 
 `LLMProvider.generate()` accepts a provider-neutral request containing messages,
 model, JSON schema, and generation options, and returns normalized text, usage,
-request ID, and finish metadata. `LLMAuctionAgent` implements the existing
-`Agent` protocol on top of that provider contract. The legacy
+request ID, and finish metadata. `LLMAuctionAgent` and `LLMCournotAgent`
+implement the existing `Agent` protocol on top of that provider contract. The legacy
 `OpenAICompatibleAgent` and its Cournot subclass are preserved.
 
 Profiles are loaded from `config/providers.json`, with process/`.env` values
@@ -156,7 +169,8 @@ allocative efficiency.
 
 ### Cournot
 
-`CournotEnvironment` models four firms choosing quantities for 40 periods. It
+`CournotEnvironment` models two to eight firms choosing quantities for 40
+periods. Four firms remains the paper-faithful default. It
 implements the paper's linear demand, unit marginal cost, 0.01 quantity grid,
 2/3 revision probability, and BEST/FULL information treatments.
 
@@ -164,11 +178,14 @@ BEST exposes market rules and aggregate opponent output. FULL additionally
 exposes each firm's previous quantity and profit. The environment always keeps
 the complete state internally for settlement and research output.
 
-Cournot currently has two policies:
+Cournot currently has four policies:
 
 - `cournot_best_reply`: deterministic local policy for tests and baseline runs.
+- `cournot_llm`: provider-profile-backed model policy supporting the same local,
+  OpenAI, Anthropic, and Gemini adapters as Auction.
 - `cournot_openai_compatible`: model policy using the existing HTTP adapter and
   a Cournot-specific response schema and prompt.
+- `web_human`: browser-mediated human quantity decisions.
 
 ## Configuration
 

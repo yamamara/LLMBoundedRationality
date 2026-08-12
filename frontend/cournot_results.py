@@ -6,9 +6,23 @@ from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
 from frontend.api_client import AuctionApiClient
 from sandbox.cournot_prompts import (
-    COURNOT_PLACEHOLDER_DESCRIPTIONS,
     DEFAULT_COURNOT_AGENT_PROMPT,
     DEFAULT_COURNOT_SYSTEM_PROMPT,
+)
+
+MIN_COURNOT_PLAYERS = 2
+DEFAULT_COURNOT_PLAYERS = 4
+MAX_COURNOT_PLAYERS = 8
+COURNOT_AGENT_FIELDS = (
+    "type",
+    "initial",
+    "profile",
+    "model",
+    "temperature",
+    "memory",
+    "retries",
+    "system-prompt",
+    "agent-prompt",
 )
 
 
@@ -84,10 +98,11 @@ def _agent_card(index: int):
                 [
                     html.Label(
                         [
-                            "Base URL",
-                            dcc.Input(
-                                id=f"{prefix}-base-url",
-                                value="http://localhost:11434/v1",
+                            "Model provider",
+                            dcc.Dropdown(
+                                id=f"{prefix}-profile",
+                                placeholder="Provider profile",
+                                clearable=False,
                             ),
                         ],
                         className="control-field",
@@ -95,14 +110,12 @@ def _agent_card(index: int):
                     html.Label(
                         [
                             "Model",
-                            dcc.Input(id=f"{prefix}-model", value="llama3.1"),
-                        ],
-                        className="control-field",
-                    ),
-                    html.Label(
-                        [
-                            "API key environment variable",
-                            dcc.Input(id=f"{prefix}-api-key-env", placeholder="Optional"),
+                            dcc.Input(
+                                id=f"{prefix}-model",
+                                type="text",
+                                value="llama3.1",
+                                placeholder="Blank uses the provider default",
+                            ),
                         ],
                         className="control-field",
                     ),
@@ -115,20 +128,56 @@ def _agent_card(index: int):
                 style={"display": "none"},
             ),
         ],
+        id=f"cournot-agent-{index}-card",
         className="agent-card cournot-agent-card",
+        style={} if index <= DEFAULT_COURNOT_PLAYERS else {"display": "none"},
+    )
+
+
+def _agent_prompt_card(index: int):
+    prefix = f"cournot-agent-{index}"
+    return html.Div(
+        [
+            html.H4(f"Player P{index}"),
+            html.P(
+                "Used when this player's participant type is Model.",
+                className="field-help",
+            ),
+            html.Label(
+                [
+                    "System prompt",
+                    dcc.Textarea(
+                        id=f"{prefix}-system-prompt",
+                        value=DEFAULT_COURNOT_SYSTEM_PROMPT,
+                    ),
+                ],
+                className="control-field prompt-field",
+            ),
+            html.Label(
+                [
+                    "Decision prompt",
+                    dcc.Textarea(
+                        id=f"{prefix}-agent-prompt",
+                        value=DEFAULT_COURNOT_AGENT_PROMPT,
+                    ),
+                ],
+                className="control-field prompt-field",
+            ),
+        ],
+        id=f"cournot-agent-{index}-prompt-card",
+        className="agent-card cournot-agent-prompt-card",
+        style={} if index <= DEFAULT_COURNOT_PLAYERS else {"display": "none"},
     )
 
 
 def cournot_experiment():
-    placeholder_options = [
-        {"label": f"{name} - {description}", "value": name}
-        for name, description in COURNOT_PLACEHOLDER_DESCRIPTIONS.items()
-    ]
     return html.Div(
         [
             dcc.Store(id="cournot-simulation-id"),
             dcc.Store(id="cournot-human-request"),
             dcc.Store(id="cournot-result-artifacts", data={}),
+            dcc.Store(id="cournot-provider-store", data=[]),
+            dcc.Store(id="cournot-player-count", data=DEFAULT_COURNOT_PLAYERS),
             dcc.Interval(id="cournot-progress-poll", interval=1000, disabled=True),
             html.Section(
                 [
@@ -143,6 +192,12 @@ def cournot_experiment():
                             html.Button(
                                 "Agent Assignment",
                                 id="cournot-show-agents",
+                                n_clicks=0,
+                                className="section-toggle",
+                            ),
+                            html.Button(
+                                "Agent Prompts",
+                                id="cournot-show-prompts",
                                 n_clicks=0,
                                 className="section-toggle",
                             ),
@@ -176,75 +231,65 @@ def cournot_experiment():
                                 1,
                                 0.0001,
                             ),
-                            html.Div(
-                                [
-                                    html.H3("Editable Prompts"),
-                                    html.Label(
-                                        [
-                                            "System prompt",
-                                            dcc.Textarea(
-                                                id="cournot-system-prompt",
-                                                value=DEFAULT_COURNOT_SYSTEM_PROMPT,
-                                            ),
-                                        ],
-                                        className="control-field prompt-field",
-                                    ),
-                                    html.Label(
-                                        [
-                                            "System placeholder",
-                                            dcc.Dropdown(
-                                                id="cournot-system-placeholder",
-                                                options=placeholder_options,
-                                            ),
-                                        ],
-                                        className="control-field",
-                                    ),
-                                    html.Button(
-                                        "Insert system placeholder",
-                                        id="cournot-insert-system-placeholder",
-                                        n_clicks=0,
-                                    ),
-                                    html.Label(
-                                        [
-                                            "Agent prompt",
-                                            dcc.Textarea(
-                                                id="cournot-agent-prompt",
-                                                value=DEFAULT_COURNOT_AGENT_PROMPT,
-                                            ),
-                                        ],
-                                        className="control-field prompt-field",
-                                    ),
-                                    html.Label(
-                                        [
-                                            "Agent placeholder",
-                                            dcc.Dropdown(
-                                                id="cournot-agent-placeholder",
-                                                options=placeholder_options,
-                                            ),
-                                        ],
-                                        className="control-field",
-                                    ),
-                                    html.Button(
-                                        "Insert agent placeholder",
-                                        id="cournot-insert-agent-placeholder",
-                                        n_clicks=0,
-                                    ),
-                                    html.Button(
-                                        "Reset prompts",
-                                        id="cournot-reset-prompts",
-                                        n_clicks=0,
-                                    ),
-                                ],
-                                className="prompt-editor cournot-prompt-editor",
-                            ),
                         ],
                         id="cournot-hyperparameters-panel",
                         className="control-grid tab-content",
                     ),
                     html.Div(
-                        [_agent_card(index) for index in range(1, 5)],
+                        [
+                            html.Div(
+                                [
+                                    html.Strong(
+                                        f"{DEFAULT_COURNOT_PLAYERS} players",
+                                        id="cournot-player-count-label",
+                                    ),
+                                    html.Button(
+                                        "Remove player",
+                                        id="cournot-remove-player",
+                                        n_clicks=0,
+                                        className="player-count-button",
+                                    ),
+                                    html.Button(
+                                        "Add player",
+                                        id="cournot-add-player",
+                                        n_clicks=0,
+                                        className="player-count-button",
+                                    ),
+                                ],
+                                className="cournot-player-controls",
+                            ),
+                            html.Div(
+                                [
+                                    html.Div(
+                                        id="cournot-provider-status",
+                                        className="provider-status",
+                                    ),
+                                    *[
+                                        _agent_card(index)
+                                        for index in range(
+                                            1, MAX_COURNOT_PLAYERS + 1
+                                        )
+                                    ],
+                                ],
+                                className="agent-grid",
+                            ),
+                        ],
                         id="cournot-agent-assignment-panel",
-                        className="agent-grid tab-content",
+                        className="tab-content",
+                        style={"display": "none"},
+                    ),
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    _agent_prompt_card(index)
+                                    for index in range(1, MAX_COURNOT_PLAYERS + 1)
+                                ],
+                                className="agent-grid",
+                            ),
+                        ],
+                        id="cournot-agent-prompts-panel",
+                        className="tab-content",
                         style={"display": "none"},
                     ),
                     html.Button(
@@ -254,7 +299,13 @@ def cournot_experiment():
                         className="run-button",
                     ),
                     html.Div(id="cournot-status-message", className="status-message"),
-                    html.Progress(id="cournot-progress-bar", value=0, max=100),
+                    html.Progress(
+                        id="cournot-progress-bar",
+                        value=0,
+                        max=100,
+                        title="Cournot simulation progress",
+                        **{"aria-label": "Cournot simulation progress"},
+                    ),
                 ],
                 className="panel",
             ),
@@ -335,7 +386,115 @@ def cournot_results_panel():
     )
 
 
+def _profile_model(profile_id, profiles):
+    profile = next(
+        (item for item in (profiles or []) if item["profile_id"] == profile_id),
+        None,
+    )
+    return profile.get("model", "") if profile else ""
+
+
 def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
+    @app.callback(
+        *[
+            Output(f"cournot-agent-{index}-profile", "options")
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ],
+        *[
+            Output(f"cournot-agent-{index}-profile", "value")
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ],
+        Output("cournot-provider-store", "data"),
+        Output("cournot-provider-status", "children"),
+        Input("location", "pathname"),
+    )
+    def load_cournot_profiles(_pathname):
+        try:
+            profiles = client.providers()["profiles"]
+            options = [
+                {
+                    "label": (
+                        f"{profile['profile_id']} "
+                        f"({'ready' if profile['configured'] else 'not configured'})"
+                    ),
+                    "value": profile["profile_id"],
+                    "disabled": not profile["configured"],
+                }
+                for profile in profiles
+            ]
+            ready = next(
+                (
+                    profile["profile_id"]
+                    for profile in profiles
+                    if profile["configured"]
+                ),
+                None,
+            )
+            statuses = [
+                html.Div(
+                    f"{profile['profile_id']}: "
+                    f"{profile['configuration_status'].replace('_', ' ')}"
+                )
+                for profile in profiles
+            ]
+            return (
+                *([options] * MAX_COURNOT_PLAYERS),
+                *([ready] * MAX_COURNOT_PLAYERS),
+                profiles,
+                statuses,
+            )
+        except Exception as exc:
+            return (
+                *([[]] * MAX_COURNOT_PLAYERS),
+                *([None] * MAX_COURNOT_PLAYERS),
+                [],
+                f"Provider status unavailable: {exc}",
+            )
+
+    for index in range(1, MAX_COURNOT_PLAYERS + 1):
+        app.callback(
+            Output(f"cournot-agent-{index}-model", "value"),
+            Input(f"cournot-agent-{index}-profile", "value"),
+            State("cournot-provider-store", "data"),
+            prevent_initial_call=True,
+        )(_profile_model)
+
+    @app.callback(
+        Output("cournot-player-count", "data"),
+        Output("cournot-player-count-label", "children"),
+        Output("cournot-remove-player", "disabled"),
+        Output("cournot-add-player", "disabled"),
+        *[
+            Output(f"cournot-agent-{index}-card", "style")
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ],
+        *[
+            Output(f"cournot-agent-{index}-prompt-card", "style")
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ],
+        Input("cournot-remove-player", "n_clicks"),
+        Input("cournot-add-player", "n_clicks"),
+        State("cournot-player-count", "data"),
+    )
+    def change_player_count(_remove_clicks, _add_clicks, current_count):
+        count = int(current_count or DEFAULT_COURNOT_PLAYERS)
+        if ctx.triggered_id == "cournot-remove-player":
+            count = max(MIN_COURNOT_PLAYERS, count - 1)
+        elif ctx.triggered_id == "cournot-add-player":
+            count = min(MAX_COURNOT_PLAYERS, count + 1)
+        card_styles = [
+            {} if index <= count else {"display": "none"}
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ]
+        return (
+            count,
+            f"{count} players",
+            count == MIN_COURNOT_PLAYERS,
+            count == MAX_COURNOT_PLAYERS,
+            *card_styles,
+            *card_styles,
+        )
+
     @app.callback(
         Output("cournot-score-graph", "src"),
         Input("cournot-result-artifacts", "data"),
@@ -349,26 +508,43 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
     @app.callback(
         Output("cournot-hyperparameters-panel", "style"),
         Output("cournot-agent-assignment-panel", "style"),
+        Output("cournot-agent-prompts-panel", "style"),
         Output("cournot-show-hyperparameters", "className"),
         Output("cournot-show-agents", "className"),
+        Output("cournot-show-prompts", "className"),
         Input("cournot-show-hyperparameters", "n_clicks"),
         Input("cournot-show-agents", "n_clicks"),
+        Input("cournot-show-prompts", "n_clicks"),
     )
-    def toggle_configuration(_hyper_clicks, _agent_clicks):
+    def toggle_configuration(_hyper_clicks, _agent_clicks, _prompt_clicks):
         if ctx.triggered_id == "cournot-show-agents":
-            return {"display": "none"}, {}, "section-toggle", "section-toggle active"
-        return {}, {"display": "none"}, "section-toggle active", "section-toggle"
+            return (
+                {"display": "none"}, {}, {"display": "none"},
+                "section-toggle", "section-toggle active", "section-toggle",
+            )
+        if ctx.triggered_id == "cournot-show-prompts":
+            return (
+                {"display": "none"}, {"display": "none"}, {},
+                "section-toggle", "section-toggle", "section-toggle active",
+            )
+        return (
+            {}, {"display": "none"}, {"display": "none"},
+            "section-toggle active", "section-toggle", "section-toggle",
+        )
 
     @app.callback(
         *[
             Output(f"cournot-agent-{index}-script-settings", "style")
-            for index in range(1, 5)
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
         ],
         *[
             Output(f"cournot-agent-{index}-model-settings", "style")
-            for index in range(1, 5)
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
         ],
-        *[Input(f"cournot-agent-{index}-type", "value") for index in range(1, 5)],
+        *[
+            Input(f"cournot-agent-{index}-type", "value")
+            for index in range(1, MAX_COURNOT_PLAYERS + 1)
+        ],
     )
     def show_agent_settings(*agent_types):
         script_styles = [
@@ -381,33 +557,9 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
         ]
         return (*script_styles, *model_styles)
 
-    @app.callback(
-        Output("cournot-system-prompt", "value"),
-        Output("cournot-agent-prompt", "value"),
-        Input("cournot-reset-prompts", "n_clicks"),
-        Input("cournot-insert-system-placeholder", "n_clicks"),
-        Input("cournot-insert-agent-placeholder", "n_clicks"),
-        State("cournot-system-prompt", "value"),
-        State("cournot-agent-prompt", "value"),
-        State("cournot-system-placeholder", "value"),
-        State("cournot-agent-placeholder", "value"),
-        prevent_initial_call=True,
-    )
-    def edit_prompts(_reset, _system_insert, _agent_insert, system, agent, system_name, agent_name):
-        if ctx.triggered_id == "cournot-reset-prompts":
-            return DEFAULT_COURNOT_SYSTEM_PROMPT, DEFAULT_COURNOT_AGENT_PROMPT
-        if ctx.triggered_id == "cournot-insert-system-placeholder" and system_name:
-            return f"{system or ''} {{{{ {system_name} }}}}", no_update
-        if ctx.triggered_id == "cournot-insert-agent-placeholder" and agent_name:
-            return no_update, f"{agent or ''} {{{{ {agent_name} }}}}"
-        return no_update, no_update
-
     agent_states = []
-    for index in range(1, 5):
-        for suffix in (
-            "type", "initial", "base-url", "model", "api-key-env",
-            "temperature", "memory", "retries",
-        ):
+    for index in range(1, MAX_COURNOT_PLAYERS + 1):
+        for suffix in COURNOT_AGENT_FIELDS:
             agent_states.append(State(f"cournot-agent-{index}-{suffix}", "value"))
 
     @app.callback(
@@ -435,37 +587,66 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
         State("cournot-rounds", "value"),
         State("cournot-seed", "value"),
         State("cournot-revision-probability", "value"),
-        State("cournot-system-prompt", "value"),
-        State("cournot-agent-prompt", "value"),
+        State("cournot-player-count", "data"),
         *agent_states,
         prevent_initial_call=True,
     )
     def run_poll_or_submit(
         _run, _poll, _submit, simulation_id, human_request, human_quantity,
-        treatment, rounds, seed, revision_probability, system_prompt, agent_prompt,
+        treatment, rounds, seed, revision_probability, player_count,
         *agent_values,
     ):
         hidden_human = (None, {"display": "none"}, "", "", 0, "")
         if ctx.triggered_id == "cournot-run-button":
             try:
                 agents = []
-                for offset, index in enumerate(range(1, 5)):
-                    values = agent_values[offset * 8:(offset + 1) * 8]
-                    kind, initial, base_url, model, key_env, temperature, memory, retries = values
+                for offset, index in enumerate(
+                    range(1, int(player_count) + 1)
+                ):
+                    field_count = len(COURNOT_AGENT_FIELDS)
+                    values = agent_values[
+                        offset * field_count:(offset + 1) * field_count
+                    ]
+                    (
+                        kind,
+                        initial,
+                        profile_id,
+                        model,
+                        temperature,
+                        memory,
+                        retries,
+                        system_prompt_override,
+                        agent_prompt_override,
+                    ) = values
                     policy = {
                         "script": "cournot_best_reply",
-                        "model": "cournot_openai_compatible",
+                        "model": "cournot_llm",
                         "human": "web_human",
                     }[kind]
-                    agents.append(
-                        {
-                            "player_id": f"P{index}", "policy": policy,
-                            "initial_quantity": initial, "base_url": base_url,
-                            "model": model, "api_key_env": key_env or None,
-                            "temperature": temperature, "memory_rounds": memory,
-                            "max_retries": retries,
-                        }
-                    )
+                    agent = {
+                        "player_id": f"P{index}", "policy": policy,
+                        "initial_quantity": initial,
+                        "profile_id": profile_id,
+                        "model": model or None,
+                        "temperature": temperature, "memory_rounds": memory,
+                        "max_retries": retries,
+                    }
+                    if kind == "model":
+                        agent.update(
+                            {
+                                "system_prompt_template": (
+                                    system_prompt_override.strip()
+                                    if system_prompt_override
+                                    else None
+                                ),
+                                "agent_prompt_template": (
+                                    agent_prompt_override.strip()
+                                    if agent_prompt_override
+                                    else None
+                                ),
+                            }
+                        )
+                    agents.append(agent)
                 response = client.create_cournot_simulation(
                     {
                         "name": f"huck-cournot-{treatment.lower()}",
@@ -475,8 +656,8 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                         },
                         "agents": agents,
                         "prompts": {
-                            "system_template": system_prompt,
-                            "agent_template": agent_prompt,
+                            "system_template": DEFAULT_COURNOT_SYSTEM_PROMPT,
+                            "agent_template": DEFAULT_COURNOT_AGENT_PROMPT,
                         },
                     }
                 )
@@ -516,7 +697,11 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                         "ci95": result["graph_ci95_url"],
                     },
                     result["playback_url"], {"display": "block"},
-                    f"{result['run_id']} | {result['treatment']}", *hidden_human,
+                    (
+                        f"{result['run_id']} | {result['treatment']} | "
+                        f"{result['player_count']} players"
+                    ),
+                    *hidden_human,
                 )
             if state["status"] == "failed":
                 return (
@@ -531,13 +716,27 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                 if suggestion is None:
                     suggestion = private.get("previous_quantity") or 0
                 return (
-                    simulation_id, "Waiting for a human quantity.", progress, False,
+                    simulation_id,
+                    (
+                        "Waiting for a human quantity. "
+                        f"{state['completed_rounds']} of {state['total_rounds']} "
+                        f"rounds complete ({progress:.0f}%)."
+                    ),
+                    progress,
+                    False,
                     no_update, no_update, {"display": "none"}, "", pending, {},
                     f"{pending['player_id']} - Round {pending['round'] + 1}",
                     json.dumps(observation, indent=2, sort_keys=True), suggestion, "",
                 )
             return (
-                simulation_id, f"{state['status'].title()}...", progress, False,
+                simulation_id,
+                (
+                    f"{state['status'].title()}... "
+                    f"{state['completed_rounds']} of {state['total_rounds']} "
+                    f"rounds complete ({progress:.0f}%)."
+                ),
+                progress,
+                False,
                 no_update, no_update, {"display": "none"}, "", *hidden_human,
             )
         except Exception as exc:

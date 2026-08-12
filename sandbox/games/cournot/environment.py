@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Callable
 
 from sandbox.environment import Environment
 from sandbox.models import Action, AgentDecision, LegalActions, Observation, Participant
@@ -31,11 +31,12 @@ class CournotEnvironment(Environment):
         config: CournotConfig,
         participants: list[Participant],
         output: OutputWriter | None = None,
+        progress_callback: Callable[[int], None] | None = None,
     ):
         if config.treatment not in {"BEST", "FULL"}:
             raise ValueError("Cournot treatment must be BEST or FULL")
-        if len(participants) != 4:
-            raise ValueError("The Cournot experiment requires exactly four participants")
+        if not 2 <= len(participants) <= 8:
+            raise ValueError("Cournot requires between two and eight participants")
         if not 0 <= config.revision_probability <= 1:
             raise ValueError("revision_probability must be between 0 and 1")
         if config.quantity_step <= 0:
@@ -43,10 +44,11 @@ class CournotEnvironment(Environment):
 
         self.config = config
         self.participants = {participant.player_id: participant for participant in participants}
-        if len(self.participants) != 4:
+        if len(self.participants) != len(participants):
             raise ValueError("Cournot player IDs must be unique")
         self.player_ids = list(self.participants)
         self.output = output
+        self.progress_callback = progress_callback
         self.reset()
 
     def reset(self) -> None:
@@ -85,7 +87,7 @@ class CournotEnvironment(Environment):
                 "treatment": self.config.treatment,
                 "rounds_total": self.config.rounds,
                 "market": {
-                    "firms": 4,
+                    "firms": len(self.player_ids),
                     "inverse_demand": "price = max(100 - total_quantity, 0)",
                     "cost": "cost = quantity",
                 },
@@ -177,6 +179,8 @@ class CournotEnvironment(Environment):
         self.quantities = dict(self.current_quantities)
         self.current_quantities = {}
         self.round += 1
+        if self.progress_callback:
+            self.progress_callback(self.round)
 
     def compute_round(self, contexts: dict[str, dict[str, Any]]) -> None:
         total_quantity = round(sum(self.current_quantities.values()), 10)
