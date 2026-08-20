@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from sandbox.playback import cournot_playback_data
+from sandbox.provenance import decode_parameter_code
 from sandbox.scorecard import analyze_runs
 from sandbox.visualization import cournot_player_scores
 
@@ -63,6 +64,39 @@ class VisualizationTests(unittest.TestCase):
             self.assertIn("+/- 2 SD", svg)
             self.assertIn("#2563eb", svg)
             self.assertIn("#d97706", svg)
+            provenance = json.loads(
+                (output_dir / "cournot_parameters.json").read_text(encoding="utf-8")
+            )
+            parameter_hash = provenance["parameter_hash"]
+            parameter_code = provenance["parameter_code"]
+            self.assertEqual(len(parameter_hash), 64)
+            self.assertTrue(parameter_code.isdecimal())
+            self.assertEqual(
+                root_element.attrib["data-parameter-hash"], parameter_hash
+            )
+            metadata = root_element.find("{http://www.w3.org/2000/svg}metadata")
+            self.assertEqual(json.loads(metadata.text), provenance)
+            self.assertEqual(
+                root_element.attrib["data-parameter-code"], parameter_code
+            )
+            self.assertEqual(
+                decode_parameter_code(parameter_code)["experiments"][0],
+                provenance["experiments"][0]["parameters"],
+            )
+            self.assertIn(parameter_code[:100], svg)
+            self.assertEqual(
+                provenance["experiments"][0]["parameters"]["players"][0][
+                    "initial_quantity"
+                ],
+                10,
+            )
+            short_hash = provenance["short_parameter_hash"]
+            self.assertTrue(
+                (output_dir / f"cournot_player_scores_{short_hash}.svg").is_file()
+            )
+            self.assertTrue(
+                (output_dir / f"cournot_parameters_{short_hash}.json").is_file()
+            )
             ci95_svg_path = output_dir / "cournot_player_scores_ci95.svg"
             self.assertGreater(ci95_svg_path.stat().st_size, 0)
             ci95_root = ET.parse(ci95_svg_path).getroot()
@@ -157,7 +191,26 @@ class VisualizationTests(unittest.TestCase):
 
     def write_cournot_run(self, run_dir: Path) -> None:
         (run_dir / "summary.json").write_text(
-            json.dumps({"game_type": "cournot"}), encoding="utf-8"
+            json.dumps(
+                {
+                    "run_id": "cournot-run",
+                    "game_name": "provenance-test",
+                    "game_type": "cournot",
+                    "cournot": {"rounds": 3, "treatment": "BEST", "seed": 7},
+                    "participants": [
+                        {
+                            "player_id": f"P{index}",
+                            "agent_type": "AI" if index != 2 else "human",
+                            "policy": (
+                                "cournot_best_reply" if index != 2 else "human_cli"
+                            ),
+                            "initial_quantity": index * 10,
+                        }
+                        for index in range(1, 5)
+                    ],
+                }
+            ),
+            encoding="utf-8",
         )
         participant_rows = []
         for round_number, profit, revision_allowed in (

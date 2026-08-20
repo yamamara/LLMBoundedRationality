@@ -90,6 +90,7 @@ class CournotJobManager:
         if filename not in {
             "cournot_player_scores.svg",
             "cournot_player_scores_ci95.svg",
+            "cournot_parameters.json",
             "cournot_playback.html",
         }:
             return None
@@ -149,6 +150,11 @@ class CournotJobManager:
                 "game_name": summary["game_name"],
                 "treatment": summary["cournot"]["treatment"],
                 "player_count": len(request.agents),
+                "parameter_hash": summary["parameter_hash"],
+                "parameter_hash_algorithm": summary["parameter_hash_algorithm"],
+                "parameter_code": summary["parameter_code"],
+                "parameter_code_version": summary["parameter_code_version"],
+                "provenance_url": f"/api/v1/cournot-simulations/{simulation_id}/provenance",
                 "graph_url": f"/api/v1/cournot-simulations/{simulation_id}/graph",
                 "graph_two_sd_url": f"/api/v1/cournot-simulations/{simulation_id}/graph",
                 "graph_ci95_url": f"/api/v1/cournot-simulations/{simulation_id}/graph-ci95",

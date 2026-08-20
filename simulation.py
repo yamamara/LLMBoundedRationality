@@ -25,6 +25,12 @@ from sandbox.providers import build_provider
 from sandbox.games.auction.environment import AuctionConfig, AuctionEnvironment
 from sandbox.games.cournot.environment import CournotConfig, CournotEnvironment
 from sandbox.scorecard import analyze_runs
+from sandbox.provenance import (
+    PARAMETER_CODE_VERSION,
+    encode_parameter_code,
+    experiment_parameter_spec,
+    parameter_hash,
+)
 from sandbox.prompts import DEFAULT_AGENT_PROMPT, DEFAULT_SYSTEM_PROMPT, validate_prompt_templates
 from sandbox.cournot_prompts import (
     DEFAULT_COURNOT_AGENT_PROMPT,
@@ -60,7 +66,9 @@ def population_composition(participants: list[Participant]) -> str:
     raise ValueError("agent_type must be either 'human' or 'AI'")
 
 
-def participants_builder(configs: list[dict[str, Any]]) -> list[Participant]:
+def participants_builder(
+    configs: list[dict[str, Any]], request_semaphore: Any = None
+) -> list[Participant]:
     participants = []
 
     for config in configs:
@@ -68,7 +76,7 @@ def participants_builder(configs: list[dict[str, Any]]) -> list[Participant]:
             player_id=config["player_id"],
             agent_type=config["agent_type"],
             role=config.get("role", "bidder"),
-            agent=agent_builder(config),
+            agent=agent_builder(config, request_semaphore=request_semaphore),
         )
 
         participants.append(participant)
@@ -76,7 +84,7 @@ def participants_builder(configs: list[dict[str, Any]]) -> list[Participant]:
     return participants
 
 
-def agent_builder(config: dict[str, Any]) -> Agent:
+def agent_builder(config: dict[str, Any], request_semaphore: Any = None) -> Agent:
     agent_type = config["agent_type"]
     policy = config["policy"]
 
@@ -173,6 +181,7 @@ def agent_builder(config: dict[str, Any]) -> Agent:
                     "agent_prompt_template", DEFAULT_COURNOT_AGENT_PROMPT
                 ),
             ),
+            request_semaphore=request_semaphore,
         )
     if agent_type == "AI" and policy == "cournot_best_reply":
         return CournotBestReplyAgent(config.get("initial_quantity", 20.0))
@@ -216,7 +225,10 @@ def run_experiment(
         if participant.get("policy") == "llm_auction":
             participant["system_prompt_template"] = system_template
             participant["agent_prompt_template"] = agent_template
-    participants = participants_builder(participant_configs)
+    participants = participants_builder(
+        participant_configs,
+        request_semaphore=config.get("_cournot_request_semaphore"),
+    )
 
     if "auction" in config:
         game_type = "auction"
@@ -246,6 +258,17 @@ def run_experiment(
         }[name]
         output.write_csv(f"{output_name}.csv", table)
 
+    resolved_prompts = {
+        "system_template": system_template,
+        "agent_template": agent_template,
+    }
+    parameters = experiment_parameter_spec(
+        game_name=config.get("game_name", "unnamed-game"),
+        game_type=game_type,
+        game_parameters=environment.get_config_as_dict(),
+        prompts=resolved_prompts,
+        participants=participant_configs,
+    )
     output.write_json(
         "summary.json",
         {
@@ -254,7 +277,13 @@ def run_experiment(
             "game_type": game_type,
             "created_at": datetime.now(UTC).isoformat(),
             "population_composition": composition,
-            "prompts": {"system_template": system_template, "agent_template": agent_template},
+            "prompts": resolved_prompts,
+            "participants": parameters["players"],
+            "parameter_hash": parameter_hash(parameters),
+            "parameter_hash_algorithm": "sha256",
+            "parameter_code": encode_parameter_code({"experiments": [parameters]}),
+            "parameter_code_version": PARAMETER_CODE_VERSION,
+            "parameters": parameters,
             game_type: environment.get_config_as_dict(),
         },
     )

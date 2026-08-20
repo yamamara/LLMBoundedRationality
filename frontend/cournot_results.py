@@ -714,10 +714,18 @@ def register_cournot_callbacks(app: Dash, client: AuctionApiClient) -> None:
                         "ci95": result["graph_ci95_url"],
                     },
                     result["playback_url"], {"display": "block"},
-                    (
-                        f"{result['run_id']} | {result['treatment']} | "
-                        f"{result['player_count']} players"
-                    ),
+                    [
+                        (
+                            f"{result['run_id']} | {result['treatment']} | "
+                            f"{result['player_count']} players | experiment code "
+                        ),
+                        html.A(
+                            result["parameter_code"][:24] + "…",
+                            href=result["provenance_url"],
+                            target="_blank",
+                            title="Open decoded experiment and player parameters",
+                        ),
+                    ],
                     *hidden_human,
                 )
             if state["status"] == "failed":

@@ -220,6 +220,14 @@ class CournotJobTests(unittest.TestCase):
                 self.assertEqual(result["simulation_id"], state.simulation_id)
                 self.assertEqual(result["run_id"], state.simulation_id)
                 self.assertEqual(result["player_count"], 4)
+                self.assertEqual(len(result["parameter_hash"]), 64)
+                self.assertEqual(result["parameter_hash_algorithm"], "sha256")
+                self.assertTrue(result["parameter_code"].isdecimal())
+                self.assertEqual(result["parameter_code_version"], 1)
+                self.assertEqual(
+                    result["provenance_url"],
+                    f"/api/v1/cournot-simulations/{state.simulation_id}/provenance",
+                )
                 self.assertEqual(
                     result["graph_two_sd_url"],
                     f"/api/v1/cournot-simulations/{state.simulation_id}/graph",
@@ -233,6 +241,9 @@ class CournotJobTests(unittest.TestCase):
                 ).is_file())
                 self.assertTrue(manager.artifact_path(
                     state.simulation_id, "cournot_player_scores_ci95.svg"
+                ).is_file())
+                self.assertTrue(manager.artifact_path(
+                    state.simulation_id, "cournot_parameters.json"
                 ).is_file())
                 self.assertTrue(manager.artifact_path(
                     state.simulation_id, "cournot_playback.html"

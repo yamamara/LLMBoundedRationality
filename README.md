@@ -73,6 +73,52 @@ interval. Cournot analyses also include a self-contained
 `analysis/cournot_playback.html` for replaying every decision and settlement.
 The graph shows average profit per player and lets the frontend switch between
 two-standard-deviation whiskers and 95% confidence intervals.
+
+Each Cournot graph also has a deterministic SHA-256 parameter hash printed in
+the image and embedded in its SVG metadata. Hash-named copies of the SVGs and
+`analysis/cournot_parameters_<hash>.json` map that hash back to the complete
+experiment-wide and per-player settings. Stable, unhashed artifact names remain
+available for existing scripts and browser routes. Credentials, run IDs,
+timestamps, output paths, and outcomes are excluded from the parameter hash.
+
+The graph itself prints a decimal-only, reversible experiment code containing
+the exact sanitized game and player parameters. Decode either the SVG directly
+or a copied numeric code with:
+
+```bash
+py scripts/decode_cournot_code.py runs/path/to/analysis/cournot_player_scores.svg
+py scripts/decode_cournot_code.py 27182801...
+```
+
+The decoder prints readable JSON. Standard prompt text is compacted in the code
+and restored during decoding; custom prompts and provider options round-trip as
+written. The SHA-256 value remains as a separate integrity fingerprint.
+
+Run the compact four-player temperature and memory study with:
+
+```bash
+py scripts/run_cournot_parameter_study.py examples/cournot_temperature_memory_study.json --output-dir runs/cournot-temperature-memory
+```
+
+The fixed design runs 73 configurations and three trials each: 17 temperature
+configurations, 10 memory configurations, and 46 combined configurations. It
+uses the FULL treatment, revision probability one, and at most two concurrent
+Ollama requests. Inspect the plan without writing files or contacting Ollama:
+
+```bash
+py scripts/run_cournot_parameter_study.py examples/cournot_temperature_memory_study.json --output-dir runs/cournot-temperature-memory --dry-run
+```
+
+Resume an interrupted study with:
+
+```bash
+py scripts/run_cournot_parameter_study.py --resume runs/cournot-temperature-memory
+```
+
+Graphs are grouped beneath `only_changing_temperature`,
+`only_changing_memory_rounds`, and `changing_temperature_and_memory`. The root
+manifest maps every trial to its raw files and SVG, while
+`combination_catalog.csv` lists the exact P1-P4 settings.
 Choose another analysis directory with:
 
 ```bash

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from html import escape
 from pathlib import Path
 from statistics import mean, stdev
-from typing import Iterable
+from typing import Any, Iterable
 
+from sandbox.provenance import visualization_provenance
 from sandbox.statistics import t_critical_95
 
 
@@ -93,18 +95,36 @@ def write_cournot_player_visualization(
         writer.writeheader()
         writer.writerows(asdict(score) for score in scores)
 
-    (output_dir / "cournot_player_scores.svg").write_text(
-        _cournot_score_svg(scores, error_mode="two_sd"),
-        encoding="utf-8",
+    provenance = visualization_provenance(run_dirs)
+    provenance_json = json.dumps(provenance, indent=2, sort_keys=True) + "\n"
+    short_hash = provenance["short_parameter_hash"]
+    (output_dir / f"cournot_parameters_{short_hash}.json").write_text(
+        provenance_json, encoding="utf-8"
     )
-    (output_dir / "cournot_player_scores_ci95.svg").write_text(
-        _cournot_score_svg(scores, error_mode="ci95"),
-        encoding="utf-8",
+    (output_dir / "cournot_parameters.json").write_text(
+        provenance_json, encoding="utf-8"
     )
 
+    two_sd_svg = cournot_score_svg(scores, "two_sd", provenance)
+    ci95_svg = cournot_score_svg(scores, "ci95", provenance)
+    for filename in (
+        "cournot_player_scores.svg",
+        provenance["images"]["two_standard_deviations"],
+    ):
+        (output_dir / filename).write_text(two_sd_svg, encoding="utf-8")
+    for filename in (
+        "cournot_player_scores_ci95.svg",
+        provenance["images"]["student_t_95_ci"],
+    ):
+        (output_dir / filename).write_text(ci95_svg, encoding="utf-8")
 
-def _cournot_score_svg(
-    scores: list[CournotPlayerScore], error_mode: str = "two_sd"
+
+def cournot_score_svg(
+    scores: list[CournotPlayerScore],
+    error_mode: str = "two_sd",
+    provenance: dict[str, Any] | None = None,
+    sample_description: str = "all completed rounds",
+    show_whiskers: bool = True,
 ) -> str:
     if error_mode == "two_sd":
         lower_bound = lambda score: score.lower_two_sd
@@ -120,10 +140,19 @@ def _cournot_score_svg(
         raise ValueError(f"Unsupported Cournot error mode: {error_mode}")
 
     width = max(760, 180 + 120 * len(scores))
-    height = 540
-    left, right, top, bottom = 90, 40, 85, 125
+    chart_height = 540
+    provenance = provenance or {}
+    experiment_code = provenance.get("parameter_code", "")
+    code_line_length = max(80, (width - 80) // 6)
+    code_lines = [
+        experiment_code[index : index + code_line_length]
+        for index in range(0, len(experiment_code), code_line_length)
+    ]
+    code_section_height = 42 + 9 * len(code_lines) if code_lines else 0
+    height = chart_height + code_section_height
+    left, right, top, bottom = 90, 40, 105, 125
     plot_width = width - left - right
-    plot_height = height - top - bottom
+    plot_height = chart_height - top - bottom
 
     domain_min = min(0.0, *(lower_bound(score) for score in scores))
     domain_max = max(0.0, *(upper_bound(score) for score in scores))
@@ -144,18 +173,29 @@ def _cournot_score_svg(
     bar_width = min(64.0, slot_width * 0.56)
     multiple_runs = len({score.run_id for score in scores}) > 1
 
+    full_hash = provenance.get("parameter_hash", "unknown")
+    short_hash = provenance.get("short_parameter_hash", full_hash[:16])
+    metadata = escape(json.dumps(provenance, sort_keys=True))
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}" role="img" '
+        f'data-parameter-hash="{escape(full_hash, quote=True)}" '
+        f'data-parameter-code="{experiment_code}" '
         'aria-labelledby="chart-title chart-description">',
         '<title id="chart-title">Cournot average profit by player</title>',
-        '<desc id="chart-description">Bars show average profit across all completed rounds. '
-        f'Whiskers show {whisker_description}.</desc>',
+        f'<desc id="chart-description">Bars summarize {escape(sample_description)}. Whiskers show '
+        f'{whisker_description if show_whiskers else "no interval because fewer than two samples are available"}. '
+        'The numeric experiment code decodes '
+        'to the game and player parameters.</desc>',
+        f'<metadata id="cournot-experiment-provenance">{metadata}</metadata>',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
         f'<text x="{left}" y="34" font-family="sans-serif" font-size="22" '
         'font-weight="700" fill="#111827">Cournot Average Profit by Player</text>',
         f'<text x="{left}" y="58" font-family="sans-serif" font-size="13" '
-        f'fill="#4b5563">Bars: average profit across all rounds | Whiskers: {whisker_label}</text>',
+        f'fill="#4b5563">Bars: {escape(sample_description)} | Whiskers: '
+        f'{whisker_label if show_whiskers else "unavailable (n &lt; 2)"}</text>',
+        f'<text x="{left}" y="79" font-family="monospace" font-size="11" '
+        f'fill="#6b7280">Experiment code v1 | integrity {escape(short_hash)}</text>',
     ]
 
     for index in range(6):
@@ -183,9 +223,14 @@ def _cournot_score_svg(
         color = "#2563eb" if score.agent_type == "AI" else "#d97706"
         label_y = mean_y - 8 if score.average_profit >= 0 else mean_y + 18
         run_label = score.run_id if len(score.run_id) <= 18 else score.run_id[:15] + "..."
+        interval = (
+            f", {whisker_label} [{lower_bound(score):.2f}, {upper_bound(score):.2f}]"
+            if show_whiskers
+            else ""
+        )
         title = escape(
-            f"{score.run_id} / {score.player_id}: mean {score.average_profit:.2f}, "
-            f"{whisker_label} [{lower_bound(score):.2f}, {upper_bound(score):.2f}]"
+            f"{score.run_id} / {score.player_id}: mean {score.average_profit:.2f}"
+            f"{interval}"
         )
         parts.extend(
             [
@@ -194,6 +239,11 @@ def _cournot_score_svg(
                 f'<title>{title}</title>',
                 f'<rect x="{center_x - bar_width / 2:.2f}" y="{bar_y:.2f}" '
                 f'width="{bar_width:.2f}" height="{bar_height:.2f}" fill="{color}"/>',
+            ]
+        )
+        if show_whiskers:
+            parts.extend(
+                [
                 f'<line x1="{center_x:.2f}" y1="{y(lower_bound(score)):.2f}" '
                 f'x2="{center_x:.2f}" y2="{y(upper_bound(score)):.2f}" '
                 'stroke="#111827" stroke-width="2"/>',
@@ -203,24 +253,28 @@ def _cournot_score_svg(
                 f'<line x1="{center_x - 10:.2f}" y1="{y(upper_bound(score)):.2f}" '
                 f'x2="{center_x + 10:.2f}" y2="{y(upper_bound(score)):.2f}" '
                 'stroke="#111827" stroke-width="2"/>',
+                ]
+            )
+        parts.extend(
+            [
                 f'<text x="{center_x:.2f}" y="{label_y:.2f}" text-anchor="middle" '
                 f'font-family="sans-serif" font-size="12" font-weight="700" '
                 f'fill="#111827">{score.average_profit:.2f}</text>',
-                f'<text x="{center_x:.2f}" y="{height - bottom + 24}" text-anchor="middle" '
+                f'<text x="{center_x:.2f}" y="{chart_height - bottom + 24}" text-anchor="middle" '
                 f'font-family="sans-serif" font-size="12" font-weight="700" '
                 f'fill="#111827">{escape(score.player_id)}</text>',
-                f'<text x="{center_x:.2f}" y="{height - bottom + 42}" text-anchor="middle" '
+                f'<text x="{center_x:.2f}" y="{chart_height - bottom + 42}" text-anchor="middle" '
                 f'font-family="sans-serif" font-size="10" fill="#4b5563">{escape(score.agent)}</text>',
             ]
         )
         if multiple_runs:
             parts.append(
-                f'<text x="{center_x:.2f}" y="{height - bottom + 58}" text-anchor="middle" '
+                f'<text x="{center_x:.2f}" y="{chart_height - bottom + 58}" text-anchor="middle" '
                 f'font-family="sans-serif" font-size="9" fill="#6b7280">{escape(run_label)}</text>'
             )
         parts.append("</g>")
 
-    legend_y = height - 26
+    legend_y = chart_height - 26
     parts.extend(
         [
             f'<rect x="{left}" y="{legend_y - 11}" width="12" height="12" fill="#2563eb"/>',
@@ -233,7 +287,24 @@ def _cournot_score_svg(
             'transform="rotate(-90 22 '
             f'{top + plot_height / 2:.2f})" font-family="sans-serif" font-size="12" '
             'fill="#374151">Average profit</text>',
-            "</svg>\n",
         ]
     )
+    if code_lines:
+        parts.extend(
+            [
+                f'<line x1="40" y1="{chart_height}" x2="{width - 40}" '
+                f'y2="{chart_height}" stroke="#d1d5db"/>',
+                f'<text x="40" y="{chart_height + 20}" font-family="sans-serif" '
+                'font-size="11" font-weight="700" fill="#374151">'
+                'Numeric experiment code - decode with scripts/decode_cournot_code.py</text>',
+                f'<g id="cournot-parameter-code" data-parameter-code="{experiment_code}">',
+            ]
+        )
+        for index, line in enumerate(code_lines):
+            parts.append(
+                f'<text x="40" y="{chart_height + 36 + index * 9}" '
+                f'font-family="monospace" font-size="7" fill="#4b5563">{line}</text>'
+            )
+        parts.append("</g>")
+    parts.append("</svg>\n")
     return "\n".join(parts)

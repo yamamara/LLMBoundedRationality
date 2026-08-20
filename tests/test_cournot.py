@@ -206,12 +206,19 @@ class CournotTests(unittest.TestCase):
             with (run_dir / "participant_data.csv").open(newline="", encoding="utf-8") as handle:
                 self.assertEqual(len(list(csv.DictReader(handle))), 12)
             with (run_dir / "summary.json").open(encoding="utf-8") as handle:
-                self.assertEqual(json.load(handle)["game_type"], "cournot")
+                summary = json.load(handle)
+            self.assertEqual(summary["game_type"], "cournot")
+            self.assertEqual(len(summary["parameter_hash"]), 64)
+            self.assertEqual(summary["parameter_hash_algorithm"], "sha256")
+            self.assertTrue(summary["parameter_code"].isdecimal())
+            self.assertEqual(summary["parameter_code_version"], 1)
+            self.assertEqual(summary["parameters"]["players"], run_config["participants"])
             self.assertTrue(cournot_outcomes([run_dir]))
             self.assertEqual(analysis_dir, analysis_output)
             self.assertTrue((analysis_output / "scorecard.json").exists())
             self.assertTrue((analysis_output / "scorecard.csv").exists())
             self.assertTrue((analysis_output / "cournot_player_scores.csv").exists())
+            self.assertTrue((analysis_output / "cournot_parameters.json").exists())
             self.assertGreater(
                 (analysis_output / "cournot_player_scores.svg").stat().st_size,
                 0,

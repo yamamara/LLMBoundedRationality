@@ -107,6 +107,13 @@ def create_api_app(
             raise HTTPException(404, "Cournot confidence interval graph not found")
         return FileResponse(path, media_type="image/svg+xml")
 
+    @app.get("/api/v1/cournot-simulations/{simulation_id}/provenance")
+    def cournot_provenance(simulation_id: str):
+        path = cournot_jobs.artifact_path(simulation_id, "cournot_parameters.json")
+        if path is None:
+            raise HTTPException(404, "Cournot parameter provenance not found")
+        return FileResponse(path, media_type="application/json")
+
     @app.get("/api/v1/cournot-simulations/{simulation_id}/playback")
     def cournot_playback(simulation_id: str):
         path = cournot_jobs.artifact_path(simulation_id, "cournot_playback.html")

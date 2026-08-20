@@ -1,0 +1,35 @@
+{
+  "name": "llama31-8b-cournot-temperature-memory",
+  "provider": {
+    "provider": "local_llama",
+    "transport": "ollama",
+    "endpoint": "http://localhost:11434",
+    "model": "llama3.1:8b",
+    "max_output_tokens": 300,
+    "timeout_seconds": 120.0,
+    "max_retries": 2,
+    "top_p": 1.0,
+    "provider_options": {
+      "num_ctx": 16384,
+      "keep_alive": "30m"
+    }
+  },
+  "experiment": {
+    "total_players": 4,
+    "treatment": "FULL",
+    "trials": 3,
+    "rounds": 40,
+    "revision_probability": 1.0,
+    "base_seed": 7,
+    "quantity_min": 0.0,
+    "quantity_max": 100.0,
+    "quantity_step": 0.01,
+    "demand_intercept": 100.0,
+    "marginal_cost": 1.0,
+    "fixed_payment": 150.0
+  },
+  "execution": {
+    "workers": 2,
+    "max_concurrent_requests": 2
+  }
+}
