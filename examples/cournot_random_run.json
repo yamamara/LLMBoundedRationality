@@ -1,0 +1,23 @@
+{
+  "game_name": "huck-cournot-random-quantity",
+  "output_dir": "runs",
+  "cournot": {
+    "rounds": 40,
+    "quantity_min": 0.0,
+    "quantity_max": 100.0,
+    "quantity_step": 0.01,
+    "demand_intercept": 100.0,
+    "marginal_cost": 1.0,
+    "revision_probability": 0.6666666666666666,
+    "fixed_payment": 150.0,
+    "treatment": "BEST",
+    "seed": 7,
+    "institution": "baseline"
+  },
+  "participants": [
+    {"player_id": "P1", "agent_type": "AI", "role": "producer", "policy": "cournot_random_quantity", "random_seed": 7},
+    {"player_id": "P2", "agent_type": "AI", "role": "producer", "policy": "cournot_random_quantity", "random_seed": 8},
+    {"player_id": "P3", "agent_type": "AI", "role": "producer", "policy": "cournot_random_quantity", "random_seed": 9},
+    {"player_id": "P4", "agent_type": "AI", "role": "producer", "policy": "cournot_random_quantity", "random_seed": 10}
+  ]
+}

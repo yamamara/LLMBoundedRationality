@@ -1,5 +1,5 @@
 {
-  "game_name": "human-vs-llm-first-price",
+  "game_name": "human-vs-local-llm",
   "output_dir": "runs",
   "auction": {
     "rounds": 10,
@@ -17,18 +17,21 @@
       "policy": "human_cli"
     },
     {
-      "player_id": "L1",
+      "player_id": "Local_AI",
       "agent_type": "AI",
       "policy": "openai_compatible",
-      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-      "model": "gemini-2.5-flash",
-      "api_key_env": "OPENAI_API_KEY",
-      "temperature": 0,
+      "base_url": "http://localhost:11434/v1",
+      "api_key_env": null, 
+      "model": "llama3.1", 
+      "temperature": 0.2,
       "max_tokens": 800,
-      "timeout_seconds": 60,
+      "timeout_seconds": 120,
       "memory_rounds": 3,
-      "max_retries": 2,
-      "reasoning_effort": "none"
+      "max_retries": 10,
+      "reasoning_effort": "none",
+      "response_format": {
+        "type": "json_object"
+      }
     }
   ]
 }

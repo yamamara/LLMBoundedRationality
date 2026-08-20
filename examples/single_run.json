@@ -4,8 +4,8 @@
   "auction": {
     "rounds": 10,
     "starting_budget": 100,
-    "valuation_min": 1,
-    "valuation_max": 100,
+    "true_value_min": 1,
+    "true_value_max": 100,
     "mechanism": "first_price",
     "institution": "baseline",
     "seed": 7

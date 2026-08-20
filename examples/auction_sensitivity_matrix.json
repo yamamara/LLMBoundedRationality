@@ -1,0 +1,44 @@
+{
+  "game_name": "mechanism-sensitivity",
+  "output_dir": "runs",
+  "n": 5,
+  "auction": {
+    "rounds": 10,
+    "starting_budget": 100,
+    "true_value_min": 1,
+    "true_value_max": 100,
+    "mechanism": "first_price",
+    "num_players": 4,
+    "mechanism_description_treatment": "concise",
+    "institution": "baseline",
+    "seed": 42,
+    "tie_breaking": "seeded_random",
+    "tie_break_seed": 42
+  },
+  "prompts": {
+    "system_template": "You are player {{ player_id }} in an auction with {{ num_players }} total players and {{ num_opponents }} opponents. The mechanism is {{ mechanism_name }}. {{ mechanism_description }} Maximize your payoff and follow the response rules.",
+    "agent_template": "Round {{ round_number }} of {{ total_rounds }}. Your private value is {{ private_value }}, your budget is {{ remaining_budget }}, and bids must be between {{ minimum_bid }} and {{ maximum_bid }}. Public history: {{ public_history }} Return only the required bid JSON."
+  },
+  "experiment_matrix": {
+    "mechanisms": ["first_price", "second_price"],
+    "mechanism_description_treatments": ["name_only", "concise", "full"],
+    "player_counts": [2, 4, 6, 8],
+    "valuation_schedules": [
+      {
+        "name": "high-focal-value",
+        "player_ranges": {"P1": {"minimum": 80, "maximum": 100}},
+        "rotate_across_positions": true
+      }
+    ]
+  },
+  "participants": [
+    {"player_id": "P1", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P2", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P3", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P4", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P5", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P6", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P7", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"},
+    {"player_id": "P8", "agent_type": "AI", "policy": "llm_auction", "provider": "local_llama", "transport": "ollama", "endpoint": "http://localhost:11434", "model": "llama3.1"}
+  ]
+}

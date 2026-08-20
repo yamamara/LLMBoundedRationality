@@ -1,0 +1,23 @@
+{
+  "game_name": "huck-cournot-local-llms",
+  "output_dir": "runs",
+  "cournot": {
+    "rounds": 40,
+    "quantity_min": 0.0,
+    "quantity_max": 100.0,
+    "quantity_step": 0.01,
+    "demand_intercept": 100.0,
+    "marginal_cost": 1.0,
+    "revision_probability": 0.6666666666666666,
+    "fixed_payment": 150.0,
+    "treatment": "FULL",
+    "seed": 7,
+    "institution": "baseline"
+  },
+  "participants": [
+    {"player_id": "L1", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L2", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L3", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null},
+    {"player_id": "L4", "agent_type": "AI", "role": "producer", "policy": "cournot_openai_compatible", "base_url": "http://localhost:11434/v1", "api_key_env": null, "model": "llama3.1:8b", "memory_rounds": null}
+  ]
+}

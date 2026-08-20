@@ -31,10 +31,26 @@ class OutputWriter:
             handle.write("\n")
 
     def write_csv(self, name: str, rows: list[dict[str, Any]]) -> None:
+        self.write_csv_path(self.run_dir / name, rows)
+
+    @staticmethod
+    def write_csv_path(path: Path, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return
-        with (self.run_dir / name).open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        normalized = [
+            {
+                key: (
+                    json.dumps(value, sort_keys=True, default=build_default_json)
+                    if isinstance(value, (dict, list, tuple))
+                    else value
+                )
+                for key, value in row.items()
+            }
+            for row in rows
+        ]
+        fieldnames = list(dict.fromkeys(key for row in normalized for key in row))
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(rows)
-
+            writer.writerows(normalized)

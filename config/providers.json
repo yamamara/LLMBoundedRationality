@@ -1,0 +1,43 @@
+{
+  "profiles": [
+    {
+      "profile_id": "local-ollama",
+      "provider": "local_llama",
+      "model": "llama3.1:8b",
+      "endpoint": "http://localhost:11434",
+      "transport": "ollama",
+      "defaults": {"num_ctx": 16384, "keep_alive": "5m"}
+    },
+    {
+      "profile_id": "local-openai-compatible",
+      "provider": "local_llama",
+      "model": "llama3.1:8b",
+      "endpoint": "http://localhost:11434/v1",
+      "transport": "openai_compatible",
+      "defaults": {}
+    },
+    {
+      "profile_id": "openai",
+      "provider": "openai",
+      "model": "",
+      "endpoint": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "defaults": {}
+    },
+    {
+      "profile_id": "anthropic",
+      "provider": "anthropic",
+      "model": "",
+      "endpoint": "https://api.anthropic.com",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "defaults": {}
+    },
+    {
+      "profile_id": "gemini",
+      "provider": "gemini",
+      "model": "",
+      "api_key_env": "GEMINI_API_KEY",
+      "defaults": {}
+    }
+  ]
+}
